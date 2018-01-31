@@ -28,6 +28,12 @@ typedef struct {
 	size_t memsize;
 } QueryStruct;
 
+/* List structure to keep track of all registered tables */
+typedef struct regTabList {
+	char *name;
+	struct regTabList *next;
+} regTabList;
+
 typedef struct {
 	PyObject_HEAD Client cntxt;
 	bit mapped; /* indicates whether or not the connection is in a forked
@@ -37,6 +43,7 @@ typedef struct {
 				 */
 	QueryStruct *query_ptr;
 	int query_sem;
+	regTabList *regTables;
 } Py_ConnectionObject;
 
 extern PyTypeObject Py_ConnectionType;

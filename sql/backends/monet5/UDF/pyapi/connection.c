@@ -110,10 +110,104 @@ Py_END_ALLOW_THREADS;
 	}
 }
 
+static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
+{
+
+	PyObject *dict, *key;
+	PyObject *value;
+	Py_ssize_t pos = 0;
+	char *name, *tname;
+	regTabList *regTab;
+
+	/* Check argument types */
+
+	if (!PyArg_ParseTuple(args, "Os", &dict, &name)) {
+		return NULL;
+	}
+	if (!PyDict_Check(dict)) {
+		PyErr_Format(PyExc_TypeError, "expected a dictionary, but got an object "
+				"of type %s", Py_TYPE(dict)->tp_name);
+		return NULL;
+	}
+
+	while (PyDict_Next(dict, &pos, &key, &value)) {
+		if (!PyString_Check(key)) {
+			PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
+							"of type %s", Py_TYPE(key)->tp_name);
+			return NULL;
+		}
+		if (!PyArray_Check(value)) {
+			PyErr_Format(PyExc_TypeError, "expected a Numpy array as value, but got "
+							"an object of type %s", Py_TYPE(value)->tp_name);
+			return NULL;
+		}
+	}
+
+	/* Do something */
+
+	// TODO check pointer returned by malloc
+	tname = (char *) malloc(strlen(name) * sizeof(char));
+	strcpy(tname, name);
+	regTab = (regTabList *) malloc(sizeof(regTabList));
+	regTab->name = tname;
+	regTab->next = self->regTables->next;
+	self->regTables = regTab;
+
+	printf("name is: %s", name);
+	return Py_BuildValue("");
+}
+
+static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject *args)
+{
+
+	char *name;
+	regTabList *regTab, *prev;
+
+	/* Check argument types */
+
+	if (!PyArg_ParseTuple(args, "s", &name)) {
+		return NULL;
+	}
+
+	/* Look for the table in the list */
+	prev = NULL;
+	regTab = self->regTables;
+	while (regTab) {
+		if (regTab->name && strcmp(name, regTab->name) == 0) {
+			break;
+		}
+		prev = regTab;
+		regTab = regTab->next;
+	}
+	if (!regTab) {
+		/* trying to deregister a non registered table */
+	}
+
+	/* TODO Actually deregister the table */
+
+	/* Remove the table from the list */
+	if (prev) {
+		prev->next = regTab->next;
+	} else {
+		self->regTables = regTab->next;
+	}
+	free(regTab->name);
+	free(regTab);
+
+	printf("name is: %s", name);
+	return Py_BuildValue("");
+}
+
 static PyMethodDef _connectionObject_methods[] = {
 	{"execute", (PyCFunction)_connection_execute, METH_O,
 	 "execute(query) -> executes a SQL query on the database in the current "
 	 "client context"},
+	{"registerTable", (PyCFunction)_connection_registerTable, METH_VARARGS,
+	 "registerTable(dict, name) -> registers a table existing through Python "
+	 "objects to be able to use it in queries"},
+	{"deregisterTable", (PyCFunction)_connection_deregisterTable, METH_VARARGS,
+	 "deregisterTable(name) -> deregisters the table 'name' that was previously "
+	 "registered"},
 	{NULL, NULL, 0, NULL} /* Sentinel */
 };
 
@@ -216,6 +310,7 @@ PyObject *Py_Connection_Create(Client cntxt, bit mapped, QueryStruct *query_ptr,
 	op->mapped = mapped;
 	op->query_ptr = query_ptr;
 	op->query_sem = query_sem;
+	op->regTables = NULL;
 
 	return (PyObject *)op;
 }

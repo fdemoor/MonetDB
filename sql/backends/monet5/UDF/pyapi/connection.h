@@ -34,6 +34,13 @@ typedef struct regTabList {
 	struct regTabList *next;
 } regTabList;
 
+gdk_return BBPcacheit(BAT *bn, int lock);
+
+/* List of registered tables
+ * TODO something better than a global var?
+ */
+extern regTabList *regTables;
+
 typedef struct {
 	PyObject_HEAD Client cntxt;
 	bit mapped; /* indicates whether or not the connection is in a forked
@@ -43,7 +50,6 @@ typedef struct {
 				 */
 	QueryStruct *query_ptr;
 	int query_sem;
-	regTabList *regTables;
 } Py_ConnectionObject;
 
 extern PyTypeObject Py_ConnectionType;

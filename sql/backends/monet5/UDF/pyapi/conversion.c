@@ -1172,3 +1172,19 @@ str _conversion_init(void)
 #endif
 	return msg;
 }
+
+
+BAT *PyObject_ConvertArrayToBAT(PyObject *array, int bat_type)
+{
+
+	/* TODO Add a char **return_msg to give information if NULL returned */
+
+	BAT *b = NULL;
+
+	/* FIXME only int implemented for now */
+	assert(bat_type == TYPE_int);
+
+
+	return b;
+
+}

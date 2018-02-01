@@ -110,14 +110,22 @@ Py_END_ALLOW_THREADS;
 	}
 }
 
+regTabList *regTables = NULL;
+
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
 {
 
-	PyObject *dict, *key;
-	PyObject *value;
+	PyObject *dict;
+	PyObject *key, *value;
 	Py_ssize_t pos = 0;
-	char *name, *tname;
+	char *name, *tname, *cname;
 	regTabList *regTab;
+	mvc *sql;
+	sql_table *t;
+	sql_column *col;
+	int i, bat_type;
+	BAT *b;
+	sql_subtype *tpe = NULL;
 
 	/* Check argument types */
 
@@ -143,17 +151,67 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		}
 	}
 
-	/* Do something */
+	switch (PyArray_DESCR((PyArrayObject *) dict)->type) {
+	case 'd':
+		bat_type = TYPE_int;
+		sql_find_subtype(tpe, "int", 32, 0);
+		break;
+	default:
+		PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
+		return NULL;
+	}
 
-	// TODO check pointer returned by malloc
+	/* Look if there is already a table registered with this name */
+	regTab = regTables;
+	while (regTab) {
+		if (regTab->name && strcmp(name, regTab->name) == 0) {
+			PyErr_Format(PyExc_Exception, "There is already a table registered with that name. "
+					"Deregister it first or use another name");
+			return NULL;
+		}
+		regTab = regTab->next;
+	}
+
+	/* Keep track of the register */
 	tname = (char *) malloc(strlen(name) * sizeof(char));
-	strcpy(tname, name);
+	if (!tname) {
+		PyErr_Format(PyExc_Exception, "Could not allocate space");
+		return NULL;
+	}
 	regTab = (regTabList *) malloc(sizeof(regTabList));
-	regTab->name = tname;
-	regTab->next = self->regTables->next;
-	self->regTables = regTab;
+	if (!regTab) {
+		PyErr_Format(PyExc_Exception, "Could not allocate space");
+		free(tname);
+		return NULL;
+	}
 
-	printf("name is: %s", name);
+	strcpy(tname, name);
+	regTab->name = tname;
+	regTab->next = regTables;
+	regTables = regTab;
+
+	/* TODO Actually register the table */
+	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	t = create_sql_table(sql->sa, name, tt_table, 1, SQL_DECLARED_TABLE, CA_PRESERVE);
+
+	while (PyDict_Next(dict, &pos, &key, &value)) {
+		cname = PyString_AsString(key);
+		col = create_sql_column(sql->sa, t, cname, tpe);
+		col->data = ZNEW(sql_delta);
+		/* TODO fill bat info */
+
+		b = PyObject_ConvertArrayToBAT(value, bat_type);
+		if (!b) {
+			PyErr_Format(PyExc_Exception, "Error during Array -> BAT conversion");
+			return NULL;
+		}
+		((sql_delta *) col->data)->bid = b->batCacheid;
+		BBPcacheit(b, 1);
+		i++;
+	}
+
+	stack_push_table(sql, name, NULL, t);
+
 	return Py_BuildValue("");
 }
 
@@ -161,7 +219,12 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 {
 
 	char *name;
-	regTabList *regTab, *prev;
+	regTabList *regTab = NULL, *prev = NULL;
+	mvc *sql;
+	sql_table *t;
+	//sql_column *col;
+	//int i;
+	//BAT *b;
 
 	/* Check argument types */
 
@@ -170,8 +233,7 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 	}
 
 	/* Look for the table in the list */
-	prev = NULL;
-	regTab = self->regTables;
+	regTab = regTables;
 	while (regTab) {
 		if (regTab->name && strcmp(name, regTab->name) == 0) {
 			break;
@@ -180,21 +242,27 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 		regTab = regTab->next;
 	}
 	if (!regTab) {
-		/* trying to deregister a non registered table */
+		PyErr_Format(PyExc_Exception, "There is no table registered with that name");
+		return NULL;
 	}
 
 	/* TODO Actually deregister the table */
+	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	t = stack_find_table(sql, name);
+	if (!t) {
+		// TODO Could happen?
+		// TODO What happens with a 'DROP TABLE name'?
+	}
 
 	/* Remove the table from the list */
 	if (prev) {
 		prev->next = regTab->next;
 	} else {
-		self->regTables = regTab->next;
+		regTables = regTab->next;
 	}
 	free(regTab->name);
 	free(regTab);
 
-	printf("name is: %s", name);
 	return Py_BuildValue("");
 }
 
@@ -310,7 +378,6 @@ PyObject *Py_Connection_Create(Client cntxt, bit mapped, QueryStruct *query_ptr,
 	op->mapped = mapped;
 	op->query_ptr = query_ptr;
 	op->query_sem = query_sem;
-	op->regTables = NULL;
 
 	return (PyObject *)op;
 }

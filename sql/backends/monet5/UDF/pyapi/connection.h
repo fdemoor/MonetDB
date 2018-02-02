@@ -34,8 +34,6 @@ typedef struct regTabList {
 	struct regTabList *next;
 } regTabList;
 
-gdk_return BBPcacheit(BAT *bn, int lock);
-
 /* List of registered tables
  * TODO something better than a global var?
  */

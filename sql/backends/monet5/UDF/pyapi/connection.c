@@ -135,6 +135,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	mvc *sql;
 	sql_table *t;
 	sql_column *col;
+	sql_allocator *sa;
 	int i, bat_type, ndims, nrows = -1;
 	BAT *b;
 	sql_subtype *tpe = NULL;
@@ -144,12 +145,13 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	(void) cname;
 	(void) i;
 	(void) col;
-	(void) t;
-	(void) self;
 	(void) bat_type;
 	(void) sql;
 	(void) tpe;
+	(void) t;
 #endif
+
+	/* TODO Check that name is not already a table in the database */
 
 	/* Look if there is already a table registered with this name */
 	regTab = regTables;
@@ -213,7 +215,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			return NULL;
 		}
 
-		b = PyObject_ConvertArrayToBAT((PyArrayObject *) value, TYPE_lng);
 	}
 
 	if (pos == 0) {
@@ -221,12 +222,41 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		return NULL;
 	}
 
+	/* Keep table name */
+	tname = (char *) malloc(strlen(name) * sizeof(char));
+	if (!tname) {
+		PyErr_Format(PyExc_Exception, "Could not allocate space");
+		return NULL;
+	}
+	strcpy(tname, name);
+
+	/* TODO Actually register the table */
+
+	/* Create table descriptor */
+	t = (sql_table *) malloc (sizeof(sql_table));
+	sa = sa_create();
+	t->base.id = 0;
+	t->base.wtime = 0;
+	t->base.rtime = 0;
+	t->base.flag = TR_NEW;
+	t->base.refcnt = 1;
+	t->base.name = tname;
+	t->type = tt_view;
+	t->system = 1;
+	t->persistence = (temp_t) SQL_PERSIST;
+	t->commit_action = (ca_t) CA_PRESERVE;
+	t->query = "";
+	t->access = 0;
+	cs_new(&t->columns, sa, (fdestroy) &column_destroy);
+	cs_new(&t->idxs, sa, (fdestroy) &idx_destroy);
+	cs_new(&t->keys, sa, (fdestroy) &key_destroy);
+	cs_new(&t->members, sa, (fdestroy) NULL);
+	t->pkey = NULL;
+	t->sz = COLSIZE;
+	t->cleared = 0;
+	t->s = NULL;
 
 #ifdef _FDEMOOR_WIP_
-	/* TODO Actually register the table */
-	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
-	t = create_sql_table(sql->sa, name, tt_view, 1, SQL_DECLARED_TABLE, CA_PRESERVE);
-
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
 		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
@@ -246,7 +276,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		cname = PyString_AsString(key);
 		col = create_sql_column(sql->sa, t, cname, tpe);
 		col->data = ZNEW(sql_delta);
-		/* TODO fill bat info */
 
 		b = PyObject_ConvertArrayToBAT(value, bat_type);
 		if (!b) {
@@ -257,23 +286,18 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		BBPcacheit(b, 1);
 		i++;
 	}
-
-	stack_push_table(sql, name, NULL, t);
 #endif
 
+	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	stack_push_table(sql, tname, NULL, t);/* Keep track of the register */
+
 	/* Keep track of the register */
-	tname = (char *) malloc(strlen(name) * sizeof(char));
-	if (!tname) {
-		PyErr_Format(PyExc_Exception, "Could not allocate space");
-		return NULL;
-	}
 	regTab = (regTabList *) malloc(sizeof(regTabList));
 	if (!regTab) {
 		PyErr_Format(PyExc_Exception, "Could not allocate space");
 		free(tname);
 		return NULL;
 	}
-	strcpy(tname, name);
 	regTab->name = tname;
 	regTab->next = regTables;
 	regTables = regTab;
@@ -323,7 +347,6 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 		return NULL;
 	}
 
-#ifdef _FDEMOOR_WIP_
 	/* TODO Actually deregister the table */
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
 	t = stack_find_table(sql, name);
@@ -331,14 +354,30 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 		// TODO Could happen?
 		// TODO What happens with a 'DROP TABLE name'?
 	}
+	for (i = sql->topvars-1; i >= 0; i--) {
+		if (!sql->vars[i].frame && strcmp(sql->vars[i].name, name)==0)
+		{
+			sql->vars[i].t = NULL;
+		}
+	}
+#ifdef _FDEMOOR_WIP_
 	for (cn = t->columns.set->h; cn; cn = cn->next) {
 		col = (sql_column *) cn->data;
 		BBPuncacheit(((sql_delta *) col->data)->bid, 1); // FIXME not sure about the 1, maybe
-													   // 0 and manual destroy of BAT
+													     // 0 and manual destroy of BAT
 		column_destroy(col);
 	}
-	table_destroy(t);
 #endif
+
+	if (--(t->base.refcnt) == 0) {
+		cs_destroy(&t->keys);
+		cs_destroy(&t->idxs);
+		cs_destroy(&t->columns);
+		cs_destroy(&t->members);
+	}
+	free(t);
+
+	t = stack_find_table(sql, name); // Should be null next time ?
 
 	/* Remove the table from the list */
 	if (prev) {

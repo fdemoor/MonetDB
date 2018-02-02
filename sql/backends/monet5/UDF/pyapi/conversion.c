@@ -1174,20 +1174,57 @@ str _conversion_init(void)
 }
 
 
-BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type)
+BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_size)
 {
 	/* TODO Add a char **return_msg to give information if NULL returned */
 
 	BAT *b = NULL;
-	void *data;
-	npy_intp ind = 0;
+	char *data;
+	npy_intp ind = 0, *shape;
+	int nrows;
 
+#ifndef _FDEMOOR_WIP_
 	(void) data;
+	(void) nrows;
+	(void) shape;
+	(void) ind;
+	(void) array;
+	(void) bat_type;
+	(void) mem_size;
+#endif
 
-	/* FIXME only int implemented for now */
-	assert(bat_type == TYPE_int);
 
-	data = PyArray_GetPtr(array, &ind);
+
+#ifdef _FDEMOOR_WIP_
+
+	shape = PyArray_SHAPE((PyArrayObject *) value)
+	nrows = shape[0];
+
+	data = (char *) PyArray_GetPtr(array, &ind);
+
+	b = COLnew(0, bat_type, 0, TRANSIENT);
+	if (b == NULL) {
+		/* TODO Set error message */
+		return NULL;
+	}
+	b->tnil = 0;
+	b->tnonil = 1;
+	b->tkey = 0;
+	b->tsorted = 0;
+	b->trevsorted = 0;
+	b->tnil = 0;
+	b->tnonil = 0;
+	/* TODO NaN check if floats allowed */
+	GDKfree(b->theap.base);
+	b->theap.base = data;
+	b->theap.size = nrows * mem_size;
+	b->theap.free = b->theap.size;                                                              \
+	b->theap.storage = STORE_CMEM;                                                                \
+	b->theap.newstorage = STORE_MEM;
+	b->batCount = nrows;
+	b->batCapacity = nrows;
+	b->batCopiedtodisk = false;
+#endif
 
 
 	return b;

@@ -106,6 +106,6 @@ pyapi_export str ConvertToSQLType(Client cntxt, BAT *b,
 str _conversion_init(void);
 
 //! Create a BAT from an array
-pyapi_export BAT *PyObject_ConvertArrayToBAT(PyObject *array, int bat_type);
+pyapi_export BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type);
 
 #endif /* _PYCONVERSION_LIB_ */

@@ -111,54 +111,44 @@ Py_END_ALLOW_THREADS;
 
 regTabList *regTables = NULL;
 
+static int isRegSupportedType(char c) {
+	/* FIXME multiple int types */
+	switch (c) {
+	case 'i':
+	case 'l':
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
 {
 
 	PyObject *dict;
 	PyObject *key, *value;
 	Py_ssize_t pos = 0;
+	npy_intp *shape;
 	char *name, *tname, *cname;
 	regTabList *regTab;
 	mvc *sql;
 	sql_table *t;
 	sql_column *col;
-	int i, bat_type;
+	int i, bat_type, ndims, nrows = -1;
 	BAT *b;
 	sql_subtype *tpe = NULL;
 
-	/* Check argument types */
-
-	if (!PyArg_ParseTuple(args, "Os", &dict, &name)) {
-		return NULL;
-	}
-	if (!PyDict_Check(dict)) {
-		PyErr_Format(PyExc_TypeError, "expected a dictionary, but got an object "
-				"of type %s", Py_TYPE(dict)->tp_name);
-		return NULL;
-	}
-
-	while (PyDict_Next(dict, &pos, &key, &value)) {
-		if (!PyString_Check(key)) {
-			PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
-							"of type %s", Py_TYPE(key)->tp_name);
-			return NULL;
-		}
-		if (!PyArray_Check(value)) {
-			PyErr_Format(PyExc_TypeError, "expected a Numpy array as value, but got "
-							"an object of type %s", Py_TYPE(value)->tp_name);
-			return NULL;
-		}
-	}
-
-	switch (PyArray_DESCR((PyArrayObject *) dict)->type) {
-	case 'd':
-		bat_type = TYPE_int;
-		sql_find_subtype(tpe, "int", 32, 0);
-		break;
-	default:
-		PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
-		return NULL;
-	}
+#ifndef _FDEMOOR_WIP_
+	(void) b;
+	(void) cname;
+	(void) i;
+	(void) col;
+	(void) t;
+	(void) self;
+	(void) bat_type;
+	(void) sql;
+	(void) tpe;
+#endif
 
 	/* Look if there is already a table registered with this name */
 	regTab = regTables;
@@ -171,29 +161,87 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		regTab = regTab->next;
 	}
 
-	/* Keep track of the register */
-	tname = (char *) malloc(strlen(name) * sizeof(char));
-	if (!tname) {
-		PyErr_Format(PyExc_Exception, "Could not allocate space");
+	/* Check arguments */
+
+	if (!PyArg_ParseTuple(args, "Os", &dict, &name)) {
 		return NULL;
 	}
-	regTab = (regTabList *) malloc(sizeof(regTabList));
-	if (!regTab) {
-		PyErr_Format(PyExc_Exception, "Could not allocate space");
-		free(tname);
+	if (!PyDict_Check(dict)) {
+		PyErr_Format(PyExc_TypeError, "expected a dictionary, but got an object "
+				"of type %s", Py_TYPE(dict)->tp_name);
 		return NULL;
 	}
-
-	strcpy(tname, name);
-	regTab->name = tname;
-	regTab->next = regTables;
-	regTables = regTab;
-
-	/* TODO Actually register the table */
-	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
-	t = create_sql_table(sql->sa, name, tt_table, 1, SQL_DECLARED_TABLE, CA_PRESERVE);
 
 	while (PyDict_Next(dict, &pos, &key, &value)) {
+
+		if (!PyString_Check(key)) {
+			PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
+							"of type %s", Py_TYPE(key)->tp_name);
+			return NULL;
+		}
+		if (!PyArray_Check(value)) {
+			PyErr_Format(PyExc_TypeError, "expected a Numpy array as value, but got "
+							"an object of type %s", Py_TYPE(value)->tp_name);
+			return NULL;
+		}
+
+		ndims = PyArray_NDIM((PyArrayObject *) value);
+		if (ndims > 1) {
+			PyErr_Format(PyExc_TypeError, "expecting a single dimension Numpy array");
+			return NULL;
+		}
+
+		shape = PyArray_SHAPE((PyArrayObject *) value);
+		if (shape[0] <= 0) {
+			PyErr_Format(PyExc_TypeError, "a column cannot be empty ");
+			return NULL;
+		}
+
+		if (nrows == -1) {
+			nrows = shape[0];
+		} else {
+			if (shape[0] != nrows) {
+				PyErr_Format(PyExc_TypeError, "all the columns must have the same "
+											  "number of elements");
+				return NULL;
+			}
+		}
+
+		if (!isRegSupportedType(PyArray_DESCR((PyArrayObject *) value)->type)) {
+			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
+			return NULL;
+		}
+
+		b = PyObject_ConvertArrayToBAT((PyArrayObject *) value, TYPE_lng);
+	}
+
+	if (pos == 0) {
+		PyErr_Format(PyExc_TypeError, "empty table not allowed");
+		return NULL;
+	}
+
+
+#ifdef _FDEMOOR_WIP_
+	/* TODO Actually register the table */
+	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	t = create_sql_table(sql->sa, name, tt_view, 1, SQL_DECLARED_TABLE, CA_PRESERVE);
+
+	while (PyDict_Next(dict, &pos, &key, &value)) {
+
+		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
+		case 'i':
+			bat_type = TYPE_int;
+			sql_find_subtype(tpe, "int", 32, 0);
+			break;
+		case 'l':
+			bat_type = TYPE_lng;
+			sql_find_subtype(tpe, "int", 64, 0);
+			break;
+		default:
+			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
+			return NULL;
+		}
+
 		cname = PyString_AsString(key);
 		col = create_sql_column(sql->sa, t, cname, tpe);
 		col->data = ZNEW(sql_delta);
@@ -210,6 +258,24 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	}
 
 	stack_push_table(sql, name, NULL, t);
+#endif
+
+	/* Keep track of the register */
+	tname = (char *) malloc(strlen(name) * sizeof(char));
+	if (!tname) {
+		PyErr_Format(PyExc_Exception, "Could not allocate space");
+		return NULL;
+	}
+	regTab = (regTabList *) malloc(sizeof(regTabList));
+	if (!regTab) {
+		PyErr_Format(PyExc_Exception, "Could not allocate space");
+		free(tname);
+		return NULL;
+	}
+	strcpy(tname, name);
+	regTab->name = tname;
+	regTab->next = regTables;
+	regTables = regTab;
 
 	return Py_BuildValue("");
 }
@@ -221,9 +287,20 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 	regTabList *regTab = NULL, *prev = NULL;
 	mvc *sql;
 	sql_table *t;
-	//sql_column *col;
-	//int i;
-	//BAT *b;
+	node *cn;
+	sql_column *col;
+	int i;
+	BAT *b;
+
+#ifndef _FDEMOOR_WIP_
+	(void) col;
+	(void) b;
+	(void) i;
+	(void) cn;
+	(void) t;
+	(void) sql;
+	(void) self;
+#endif
 
 	/* Check argument types */
 
@@ -245,6 +322,7 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 		return NULL;
 	}
 
+#ifdef _FDEMOOR_WIP_
 	/* TODO Actually deregister the table */
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
 	t = stack_find_table(sql, name);
@@ -252,6 +330,14 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 		// TODO Could happen?
 		// TODO What happens with a 'DROP TABLE name'?
 	}
+	for (cn = t->columns.set->h; cn; cn = cn->next) {
+		col = (sql_column *) cn->data;
+		BBPuncacheit(((sql_delta *) col->data)->bid, 1); // FIXME not sure about the 1, maybe
+													   // 0 and manual destroy of BAT
+		column_destroy(col);
+	}
+	table_destroy(t);
+#endif
 
 	/* Remove the table from the list */
 	if (prev) {

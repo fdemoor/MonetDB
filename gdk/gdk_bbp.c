@@ -3816,3 +3816,15 @@ gdk_bbp_reset(void)
 	backup_dir = 0;
 	backup_subdir = 0;
 }
+
+int
+BBPcacheBAT(BAT *b) {
+	int lock = locked_by ? MT_getpid() != locked_by : 1;
+
+	if (BBPcacheit(b, lock) != GDK_SUCCEED) {
+		return 0;
+	}
+
+	BATassertProps(b);
+	return 1;
+}

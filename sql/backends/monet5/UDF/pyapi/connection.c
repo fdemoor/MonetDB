@@ -130,27 +130,21 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	Py_ssize_t pos = 0;
 	npy_intp *shape;
 	char *name, *tname, *cname;
+	str msg;
 	regTabList *regTab;
 	mvc *sql;
 	sql_table *t;
 	sql_column *col;
-	sql_allocator *sa;
-	int i, bat_type, ndims, nrows = -1;
+	sql_schema *s;
+	sql_delta *bat;
+	int bat_type, ndims, nrows = -1;
+	size_t mem_size;
 	BAT *b;
 	sql_subtype *tpe = NULL;
 
-#ifndef _FDEMOOR_WIP_
-	(void) b;
-	(void) cname;
-	(void) i;
-	(void) col;
-	(void) bat_type;
-	(void) sql;
-	(void) tpe;
-	(void) t;
-#endif
-
-	/* TODO Check that name is not already a table in the database */
+	/* TODO Check that name is not already a table in the database
+	 * already done by function creating a table? -> to test
+	 */
 
 	/* Look if there is already a table registered with this name */
 	regTab = regTables;
@@ -229,79 +223,130 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	}
 	strcpy(tname, name);
 
-	/* TODO Actually register the table */
-
 	/* Create table descriptor */
-	t = (sql_table *) malloc (sizeof(sql_table));
-	sa = sa_create();
-	t->base.id = 0;
-	t->base.wtime = 0;
-	t->base.rtime = 0;
-	t->base.flag = TR_NEW;
-	t->base.refcnt = 1;
-	t->base.name = tname;
-	t->type = tt_view;
-	t->system = 1;
-	t->persistence = (temp_t) SQL_PERSIST;
-	t->commit_action = (ca_t) CA_PRESERVE;
-	t->query = "";
-	t->access = 0;
-	cs_new(&t->columns, sa, (fdestroy) &column_destroy);
-	cs_new(&t->idxs, sa, (fdestroy) &idx_destroy);
-	cs_new(&t->keys, sa, (fdestroy) &key_destroy);
-	cs_new(&t->members, sa, (fdestroy) NULL);
-	t->pkey = NULL;
-	t->sz = COLSIZE;
-	t->cleared = 0;
-	t->s = NULL;
 
-#ifdef _FDEMOOR_WIP_
+	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	sql->sa = sa_create();
+	if(!sql->sa) {
+		PyErr_Format(PyExc_Exception, "Create table failed: could not create allocator");
+		goto cleanup;
+	}
+	if (!(s = mvc_bind_schema(sql, "sys"))) {
+		PyErr_Format(PyExc_Exception, "Create table failed: no such schema");
+		goto cleanup;
+	}
+	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_COMMIT, -1))) {
+		PyErr_Format(PyExc_Exception, "Create table failed: could not create table");
+		goto cleanup;
+	}
+	t->data = &t; // Whatever, we need a non null value
+	t->base.allocated = 1;
+	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
 		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
 		case 'i':
 			bat_type = TYPE_int;
-			sql_find_subtype(tpe, "int", 32, 0);
+			tpe = sql_bind_localtype("int");
 			break;
 		case 'l':
 			bat_type = TYPE_lng;
-			sql_find_subtype(tpe, "int", 64, 0);
+			tpe = sql_bind_localtype("lng");
 			break;
 		default:
 			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
-			return NULL;
+		}
+		col = NULL;
+		cname = PyString_AsString(key);
+
+		if (!tpe) {
+			PyErr_Format(PyExc_Exception, "Create table failed: could not find type for the table");
+			goto cleanup;
 		}
 
-		cname = PyString_AsString(key);
-		col = create_sql_column(sql->sa, t, cname, tpe);
-		col->data = ZNEW(sql_delta);
-
-		b = PyObject_ConvertArrayToBAT(value, bat_type);
+		col = mvc_create_column(sql, t, cname, tpe);
+		if (!col) {
+			PyErr_Format(PyExc_Exception, "Create table failed: could not create column");
+			goto cleanup;
+		}
+		if (!col->data) {
+			col->data = ZNEW(sql_delta);
+			col->base.allocated = 1;
+		}
+	}
+	msg = create_table_or_view(sql, "sys", t->base.name, t, 0);
+	if (msg != MAL_SUCCEED) {
+		PyErr_Format(PyExc_Exception, "Create table failed: %s", msg);
+		goto cleanup;
+	}
+	pos = 0;
+	while (PyDict_Next(dict, &pos, &key, &value)) {
+		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
+		case 'i':
+			mem_size = sizeof(int);
+			break;
+		case 'l':
+			mem_size = sizeof(long);
+			break;
+		}
+		b = PyObject_ConvertArrayToBAT((PyArrayObject *) value, bat_type, mem_size);
 		if (!b) {
 			PyErr_Format(PyExc_Exception, "Error during Array -> BAT conversion");
-			return NULL;
+			goto cleanup;
 		}
-		((sql_delta *) col->data)->bid = b->batCacheid;
-		BBPcacheit(b, 1);
-		i++;
-	}
-#endif
+		if (!BBPcacheBAT(b)) {
+			PyErr_Format(PyExc_Exception, "Create table failed: could not cache BAT");
+			goto cleanup;
+		}
 
-	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
-	stack_push_table(sql, tname, NULL, t);/* Keep track of the register */
+		col = NULL;
+		cname = PyString_AsString(key);
+
+		col = mvc_bind_column(sql, t, cname);
+		if (!col) {
+			PyErr_Format(PyExc_Exception, "Create table failed: could not bind column");
+			goto cleanup;
+		}
+		bat = (sql_delta *) col->data;
+		bat->bid = b->batCacheid;
+		bat->ibid = b->batCacheid;
+		bat->ibase = b->S.count;
+		bat->name = cname;
+		bat->cnt = b->batCount;
+		bat->next = NULL;
+		/* FIXME fix the following commented code */
+		/*msg = mvc_append_column(sql->session->tr, col, b);
+		if (msg != MAL_SUCCEED) {
+			PyErr_Format(PyExc_Exception, "Create table failed: %s", msg);
+			goto cleanup;
+		}*/
+	}
+	t = mvc_bind_table(sql, s, tname);
+	if (!t) {
+		PyErr_Format(PyExc_Exception, "Create table failed: could not bind table");
+		goto cleanup;
+	}
+	(void) msg;
 
 	/* Keep track of the register */
+	/* FIXME maybe (probably) useless in the end */
 	regTab = (regTabList *) malloc(sizeof(regTabList));
 	if (!regTab) {
 		PyErr_Format(PyExc_Exception, "Could not allocate space");
-		free(tname);
-		return NULL;
+		goto cleanup;
 	}
 	regTab->name = tname;
 	regTab->next = regTables;
 	regTables = regTab;
 
 	return Py_BuildValue("");
+
+cleanup:
+	free(tname);
+	sa_destroy(sql->sa);
+	sql->sa = NULL;
+	return NULL;
+
 }
 
 static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject *args)
@@ -313,6 +358,7 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 	sql_table *t;
 	node *cn;
 	sql_column *col;
+	sql_schema *s;
 	int i;
 	BAT *b;
 
@@ -324,6 +370,7 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 	(void) t;
 	(void) sql;
 	(void) self;
+	(void) s;
 #endif
 
 	/* Check argument types */
@@ -348,37 +395,9 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 
 	/* TODO Actually deregister the table */
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
-	t = stack_find_table(sql, name);
-	if (!t) {
-		// TODO Could happen?
-		// TODO What happens with a 'DROP TABLE name'?
-	}
-	for (i = sql->topvars-1; i >= 0; i--) {
-		if (!sql->vars[i].frame && strcmp(sql->vars[i].name, name)==0)
-		{
-			sql->vars[i].t = NULL;
-		}
-	}
-#ifdef _FDEMOOR_WIP_
-	for (cn = t->columns.set->h; cn; cn = cn->next) {
-		col = (sql_column *) cn->data;
-		BBPuncacheit(((sql_delta *) col->data)->bid, 1); // FIXME not sure about the 1, maybe
-													     // 0 and manual destroy of BAT
-		column_destroy(col);
-	}
-#endif
-
-	if (--(t->base.refcnt) == 0) {
-		cs_destroy(&t->keys);
-		cs_destroy(&t->idxs);
-		cs_destroy(&t->columns);
-		cs_destroy(&t->members);
-	}
-	free(t);
-
-	t = stack_find_table(sql, name); // Should be null next time ?
 
 	/* Remove the table from the list */
+	/* FIXME maybe useless */
 	if (prev) {
 		prev->next = regTab->next;
 	} else {
@@ -388,6 +407,7 @@ static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject
 	free(regTab);
 
 	return Py_BuildValue("");
+
 }
 
 static PyMethodDef _connectionObject_methods[] = {

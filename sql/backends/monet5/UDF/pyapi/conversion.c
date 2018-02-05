@@ -1180,21 +1180,7 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	npy_intp ind = 0, *shape;
 	int nrows;
 
-#ifndef _FDEMOOR_WIP_
-	(void) data;
-	(void) nrows;
-	(void) shape;
-	(void) ind;
-	(void) array;
-	(void) bat_type;
-	(void) mem_size;
-#endif
-
-
-
-#ifdef _FDEMOOR_WIP_
-
-	shape = PyArray_SHAPE((PyArrayObject *) value)
+	shape = PyArray_SHAPE(array);
 	nrows = shape[0];
 
 	data = (char *) PyArray_GetPtr(array, &ind);
@@ -1221,8 +1207,6 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	b->batCount = nrows;
 	b->batCapacity = nrows;
 	b->batCopiedtodisk = false;
-#endif
-
 
 	return b;
 

@@ -1185,7 +1185,7 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 
 	data = (char *) PyArray_GetPtr(array, &ind);
 
-	b = COLnew(0, bat_type, 0, TRANSIENT);
+	b = COLnew(0, bat_type, 0, PERSISTENT);
 	if (b == NULL) {
 		/* TODO Set error message */
 		return NULL;

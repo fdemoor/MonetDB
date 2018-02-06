@@ -136,7 +136,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	sql_table *t;
 	sql_column *col;
 	sql_schema *s;
-	sql_delta *bat;
 	int bat_type, ndims, nrows = -1;
 	size_t mem_size;
 	BAT *b;
@@ -235,27 +234,27 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		PyErr_Format(PyExc_Exception, "Create table failed: no such schema");
 		goto cleanup;
 	}
-	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_COMMIT, -1))) {
+	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_ABORT, -1))) {
 		PyErr_Format(PyExc_Exception, "Create table failed: could not create table");
 		goto cleanup;
 	}
 	t->data = &t; // Whatever, we need a non null value
 	t->base.allocated = 1;
+	t->base.flag = 1;
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
 		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
 		case 'i':
-			bat_type = TYPE_int;
 			tpe = sql_bind_localtype("int");
 			break;
 		case 'l':
-			bat_type = TYPE_lng;
 			tpe = sql_bind_localtype("lng");
 			break;
 		default:
 			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
 		}
+
 		col = NULL;
 		cname = PyString_AsString(key);
 
@@ -269,33 +268,37 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			PyErr_Format(PyExc_Exception, "Create table failed: could not create column");
 			goto cleanup;
 		}
-		if (!col->data) {
-			col->data = ZNEW(sql_delta);
-			col->base.allocated = 1;
-		}
+
 	}
 	msg = create_table_or_view(sql, "sys", t->base.name, t, 0);
 	if (msg != MAL_SUCCEED) {
 		PyErr_Format(PyExc_Exception, "Create table failed: %s", msg);
 		goto cleanup;
 	}
+	t = mvc_bind_table(sql, s, tname);
+	if (!t) {
+		PyErr_Format(PyExc_Exception, "Create table failed: could not bind table");
+		goto cleanup;
+	}
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
+
 		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
 		case 'i':
+			bat_type = TYPE_int;
 			mem_size = sizeof(int);
 			break;
 		case 'l':
+			bat_type = TYPE_lng;
 			mem_size = sizeof(long);
 			break;
+		default:
+			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
 		}
+
 		b = PyObject_ConvertArrayToBAT((PyArrayObject *) value, bat_type, mem_size);
 		if (!b) {
 			PyErr_Format(PyExc_Exception, "Error during Array -> BAT conversion");
-			goto cleanup;
-		}
-		if (!BBPcacheBAT(b)) {
-			PyErr_Format(PyExc_Exception, "Create table failed: could not cache BAT");
 			goto cleanup;
 		}
 
@@ -303,30 +306,15 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		cname = PyString_AsString(key);
 
 		col = mvc_bind_column(sql, t, cname);
-		if (!col) {
-			PyErr_Format(PyExc_Exception, "Create table failed: could not bind column");
+		b->batCacheid = ((sql_delta *) col->data)->ibid;
+		((sql_delta *) col->data)->cnt = b->batCount;
+
+		if (!BBPcacheBAT(b)) {
+			PyErr_Format(PyExc_Exception, "Create table failed: could not cache BAT");
 			goto cleanup;
 		}
-		bat = (sql_delta *) col->data;
-		bat->bid = b->batCacheid;
-		bat->ibid = b->batCacheid;
-		bat->ibase = b->S.count;
-		bat->name = cname;
-		bat->cnt = b->batCount;
-		bat->next = NULL;
-		/* FIXME fix the following commented code */
-		/*msg = mvc_append_column(sql->session->tr, col, b);
-		if (msg != MAL_SUCCEED) {
-			PyErr_Format(PyExc_Exception, "Create table failed: %s", msg);
-			goto cleanup;
-		}*/
+
 	}
-	t = mvc_bind_table(sql, s, tname);
-	if (!t) {
-		PyErr_Format(PyExc_Exception, "Create table failed: could not bind table");
-		goto cleanup;
-	}
-	(void) msg;
 
 	/* Keep track of the register */
 	/* FIXME maybe (probably) useless in the end */

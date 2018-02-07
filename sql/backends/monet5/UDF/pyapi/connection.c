@@ -109,8 +109,6 @@ Py_END_ALLOW_THREADS;
 	}
 }
 
-regTabList *regTables = NULL;
-
 static int isRegSupportedType(char c) {
 	/* FIXME multiple int types */
 	switch (c) {
@@ -129,36 +127,20 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	PyObject *key, *value;
 	Py_ssize_t pos = 0;
 	npy_intp *shape;
-	char *name, *tname, *cname;
+	char *tname, *cname;
+	int bat_type, ndims, nrows = -1;
 	str msg;
-	regTabList *regTab;
 	mvc *sql;
 	sql_table *t;
 	sql_column *col;
 	sql_schema *s;
-	int bat_type, ndims, nrows = -1;
+	sql_subtype *tpe = NULL;
 	size_t mem_size;
 	BAT *b;
-	sql_subtype *tpe = NULL;
-
-	/* TODO Check that name is not already a table in the database
-	 * already done by function creating a table? -> to test
-	 */
-
-	/* Look if there is already a table registered with this name */
-	regTab = regTables;
-	while (regTab) {
-		if (regTab->name && strcmp(name, regTab->name) == 0) {
-			PyErr_Format(PyExc_Exception, "There is already a table registered with that name. "
-					"Deregister it first or use another name");
-			return NULL;
-		}
-		regTab = regTab->next;
-	}
 
 	/* Check arguments */
 
-	if (!PyArg_ParseTuple(args, "Os", &dict, &name)) {
+	if (!PyArg_ParseTuple(args, "Os", &dict, &tname)) {
 		return NULL;
 	}
 	if (!PyDict_Check(dict)) {
@@ -169,11 +151,17 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
+		/* Column names should be strings */
 		if (!PyString_Check(key)) {
 			PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
 							"of type %s", Py_TYPE(key)->tp_name);
 			return NULL;
 		}
+
+		/* Column values should be single dimension non-empty Numpy arrays
+		 * with allowed data types (integers family for now)
+		 */
+
 		if (!PyArray_Check(value)) {
 			PyErr_Format(PyExc_TypeError, "expected a Numpy array as value, but got "
 							"an object of type %s", Py_TYPE(value)->tp_name);
@@ -209,20 +197,13 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	}
 
+	/* Empty table not allowed */
 	if (pos == 0) {
 		PyErr_Format(PyExc_TypeError, "empty table not allowed");
 		return NULL;
 	}
 
-	/* Keep table name */
-	tname = (char *) malloc(strlen(name) * sizeof(char));
-	if (!tname) {
-		PyErr_Format(PyExc_Exception, "Could not allocate space");
-		return NULL;
-	}
-	strcpy(tname, name);
-
-	/* Create table descriptor */
+	/* Actually register the table */
 
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
 	sql->sa = sa_create();
@@ -316,85 +297,12 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	}
 
-	/* Keep track of the register */
-	/* FIXME maybe (probably) useless in the end */
-	regTab = (regTabList *) malloc(sizeof(regTabList));
-	if (!regTab) {
-		PyErr_Format(PyExc_Exception, "Could not allocate space");
-		goto cleanup;
-	}
-	regTab->name = tname;
-	regTab->next = regTables;
-	regTables = regTab;
-
 	return Py_BuildValue("");
 
 cleanup:
-	free(tname);
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
 	return NULL;
-
-}
-
-static PyObject *_connection_deregisterTable(Py_ConnectionObject *self, PyObject *args)
-{
-
-	char *name;
-	regTabList *regTab = NULL, *prev = NULL;
-	mvc *sql;
-	sql_table *t;
-	node *cn;
-	sql_column *col;
-	sql_schema *s;
-	int i;
-	BAT *b;
-
-#ifndef _FDEMOOR_WIP_
-	(void) col;
-	(void) b;
-	(void) i;
-	(void) cn;
-	(void) t;
-	(void) sql;
-	(void) self;
-	(void) s;
-#endif
-
-	/* Check argument types */
-
-	if (!PyArg_ParseTuple(args, "s", &name)) {
-		return NULL;
-	}
-
-	/* Look for the table in the list */
-	regTab = regTables;
-	while (regTab) {
-		if (regTab->name && strcmp(name, regTab->name) == 0) {
-			break;
-		}
-		prev = regTab;
-		regTab = regTab->next;
-	}
-	if (!regTab) {
-		PyErr_Format(PyExc_Exception, "There is no table registered with that name");
-		return NULL;
-	}
-
-	/* TODO Actually deregister the table */
-	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
-
-	/* Remove the table from the list */
-	/* FIXME maybe useless */
-	if (prev) {
-		prev->next = regTab->next;
-	} else {
-		regTables = regTab->next;
-	}
-	free(regTab->name);
-	free(regTab);
-
-	return Py_BuildValue("");
 
 }
 
@@ -404,10 +312,8 @@ static PyMethodDef _connectionObject_methods[] = {
 	 "client context"},
 	{"registerTable", (PyCFunction)_connection_registerTable, METH_VARARGS,
 	 "registerTable(dict, name) -> registers a table existing through Python "
-	 "objects to be able to use it in queries"},
-	{"deregisterTable", (PyCFunction)_connection_deregisterTable, METH_VARARGS,
-	 "deregisterTable(name) -> deregisters the table 'name' that was previously "
-	 "registered"},
+	 "objects to be able to use it in queries, de-register can be done using "
+	 "a 'DROP TABLE name;' statement"},
 	{NULL, NULL, 0, NULL} /* Sentinel */
 };
 

@@ -28,17 +28,6 @@ typedef struct {
 	size_t memsize;
 } QueryStruct;
 
-/* List structure to keep track of all registered tables */
-typedef struct regTabList {
-	char *name;
-	struct regTabList *next;
-} regTabList;
-
-/* List of registered tables
- * TODO something better than a global var?
- */
-extern regTabList *regTables;
-
 typedef struct {
 	PyObject_HEAD Client cntxt;
 	bit mapped; /* indicates whether or not the connection is in a forked

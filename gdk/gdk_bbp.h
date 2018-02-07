@@ -51,6 +51,8 @@
 #define BBPUNSTABLE	(BBPUNLOADING|BBPDELETING)	/* set while we are unloading */
 #define BBPWAITING      (BBPUNLOADING|BBPLOADING|BBPSAVING|BBPDELETING)
 
+#define BBPPYTHONBAT 4096
+
 #define BBPTRIM_ALL	(((size_t)1) << (sizeof(size_t)*8 - 2))	/* very large positive size_t */
 
 gdk_export int BBPin;		/* BATs swapped into BBP  */

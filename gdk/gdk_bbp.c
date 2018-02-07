@@ -3430,6 +3430,9 @@ BBPsync(int cnt, bat *subcommit)
 		while (++idx < cnt) {
 			bat i = subcommit ? subcommit[idx] : idx;
 			BAT *b = dirty_bat(&i, subcommit != NULL);
+			if (BBP_status(i) & BBPPYTHONBAT) {
+				continue;
+			}
 			if (i <= 0)
 				break;
 			if (BBP_status(i) & BBPEXISTING) {
@@ -3460,6 +3463,9 @@ BBPsync(int cnt, bat *subcommit)
 
 		while (++idx < cnt) {
 			bat i = subcommit ? subcommit[idx] : idx;
+			if (BBP_status(i) & BBPPYTHONBAT) {
+				continue;
+			}
 
 			if (BBP_status(i) & BBPPERSISTENT) {
 				BAT *b = dirty_bat(&i, subcommit != NULL);
@@ -3952,10 +3958,13 @@ gdk_bbp_reset(void)
 int
 BBPcacheBAT(BAT *b) {
 	int lock = locked_by ? MT_getpid() != locked_by : 1;
+	int mode;
 
 	if (BBPcacheit(b, lock) != GDK_SUCCEED) {
 		return 0;
 	}
+	mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
+	BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
 
 	BATassertProps(b);
 	return 1;

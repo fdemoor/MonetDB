@@ -1683,6 +1683,10 @@ BBPexit(void)
 			if (BBPvalid(i)) {
 				BAT *b = BBP_desc(i);
 
+				if (BBP_status(i) & BBPPYTHONBAT) {
+					continue;
+				}
+
 				if (b) {
 					if (b->batSharecnt > 0) {
 						skipped = true;
@@ -2985,6 +2989,11 @@ BBPdestroy(BAT *b)
 	bat tp = b->theap.parentid;
 	bat vtp = VIEWvtparent(b);
 
+	if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
+		b->batCopiedtodisk = FALSE;
+		return;
+	}
+
 	if (isVIEW(b)) {	/* a physical view */
 		VIEWdestroy(b);
 	} else {
@@ -3019,6 +3028,10 @@ BBPfree(BAT *b, const char *calledFrom)
 	assert(bid > 0);
 	assert(BBPswappable(b));
 	(void) calledFrom;
+
+	if (BBP_status(bid) & BBPPYTHONBAT) {
+		return GDK_SUCCEED;
+	}
 
 	/* write dirty BATs before being unloaded */
 	ret = BBPsave(b);

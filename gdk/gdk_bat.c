@@ -566,10 +566,17 @@ BATfree(BAT *b)
 	HASHfree(b);
 	IMPSfree(b);
 	OIDXfree(b);
+
+	if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
+		goto wrapup;
+	}
+
 	if (b->ttype)
 		HEAPfree(&b->theap, 0);
 	else
 		assert(!b->theap.base);
+
+wrapup:
 	if (b->tvheap) {
 		assert(b->tvheap->parentid == b->batCacheid);
 		HEAPfree(b->tvheap, 0);

@@ -128,13 +128,13 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	PyObject *key, *value;
 	Py_ssize_t pos = 0;
 	npy_intp *shape;
-	char *tname, *cname;
+	char *tname, *cname, *sname;
 	int bat_type, ndims, nrows = -1;
 	str msg;
 	mvc *sql;
 	sql_table *t;
 	sql_column *col;
-	sql_schema *s;
+	sql_schema *s, *s_old;
 	sql_subtype *tpe = NULL;
 	size_t mem_size;
 	BAT *b;
@@ -206,20 +206,25 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	/* Actually register the table */
 
+	sname = "sys";
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	s_old = sql->session->schema;
 	sql->sa = sa_create();
 	if(!sql->sa) {
 		PyErr_Format(PyExc_Exception, "Create table failed: could not create allocator");
 		goto cleanup;
 	}
-	if (!(s = mvc_bind_schema(sql, "sys"))) {
-		PyErr_Format(PyExc_Exception, "Create table failed: no such schema");
-		goto cleanup;
+	if (!(s = sql->session->schema = mvc_bind_schema(sql, sname))) {
+		if (!(s = sql->session->schema = mvc_create_schema(sql, sname, ROLE_SYSADMIN, USER_MONETDB))) {
+			PyErr_Format(PyExc_Exception, "Create table failed: could not create pybat schema");
+			goto cleanup;
+		}
 	}
 	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_ABORT, -1))) {
 		PyErr_Format(PyExc_Exception, "Create table failed: could not create table");
 		goto cleanup;
 	}
+	t->access = 1; // Read-only
 	t->data = &t; // Whatever, we need a non null value
 	t->base.allocated = 1;
 	t->base.flag = 1;
@@ -252,7 +257,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		}
 
 	}
-	msg = create_table_or_view(sql, "sys", t->base.name, t, 0);
+	msg = create_table_or_view(sql, sname, t->base.name, t, 0);
 	if (msg != MAL_SUCCEED) {
 		PyErr_Format(PyExc_Exception, "Create table failed: %s", msg);
 		goto cleanup;
@@ -262,6 +267,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		PyErr_Format(PyExc_Exception, "Create table failed: could not bind table");
 		goto cleanup;
 	}
+	t->access = 1; // Read-only
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
@@ -298,11 +304,15 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	}
 
+	sa_destroy(sql->sa);
+	sql->sa = NULL;
+	sql->session->schema = s_old;
 	return Py_BuildValue("");
 
 cleanup:
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
+	sql->session->schema = s_old;
 	return NULL;
 
 }

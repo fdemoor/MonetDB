@@ -870,10 +870,12 @@ BATdelete(BAT *b)
 		IMPSdestroy(b);
 		OIDXdestroy(b);
 	}
+
 	if (BBP_status(bid) & BBPPYTHONBAT) {
 		b->batCopiedtodisk = FALSE;
 		return;
 	}
+
 	if (b->batCopiedtodisk || (b->theap.storage != STORE_MEM)) {
 		if (b->ttype != TYPE_void &&
 		    HEAPdelete(&b->theap, o, "tail") &&

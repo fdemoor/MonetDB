@@ -1221,6 +1221,13 @@ BBPreadEntries(FILE *fp, int bbpversion)
 
 		BBP_desc(bid) = bn;
 		BBP_status(bid) = BBPEXISTING;	/* do we need other status bits? */
+
+		/* Set again pybat mask if it was set before */
+		if (status & BBPPYTHONBAT) {
+			BBP_status_on(bid, BBPPYTHONBAT, "BBPreadEntries");
+		}
+		/* */
+
 		if ((s = strchr(headname, '~')) != NULL && s == headname) {
 			s = BBPtmpname(logical, sizeof(logical), bid);
 		} else {
@@ -1633,7 +1640,7 @@ new_bbpentry(FILE *fp, bat i, const char *prefix)
 		    BUNFMT " " OIDFMT, prefix,
 		    /* BAT info */
 		    (ssize_t) i,
-		    BBP_status(i) & BBPPERSISTENT,
+		    BBP_status(i) & (BBPPERSISTENT | BBPPYTHONBAT), /* Python BAT flag must be saved */
 		    BBP_logical(i),
 		    BBP_physical(i),
 		    BBP_desc(i)->batRestricted << 1,
@@ -3846,7 +3853,6 @@ BBPcacheBAT(BAT *b) {
 	}
 	mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
 	BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
-
 	BATassertProps(b);
 	return 1;
 }

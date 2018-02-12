@@ -2737,6 +2737,15 @@ bm_commit(logger *lg)
 		BAT *lb = BATdescriptor(bid);
 		str name = BBPname(bid);
 
+		/* Can't find Python BAT: they are not saved on disk and
+		 * the system restarted, so they are not in cache anymore
+		 * -> there is nothing to do, skip it
+		 */
+		if ((lb == NULL) && (BBP_status(bid) & BBPPYTHONBAT)) {
+			continue;
+		}
+		/* */
+
 		if (lb == NULL ||
 		    BATmode(lb, TRANSIENT) != GDK_SUCCEED) {
 			logbat_destroy(lb);
@@ -2844,7 +2853,6 @@ logger_del_bat(logger *lg, log_bid bid)
 	 * transient */
 	if (p >= lg->catalog_bid->batInserted &&
 	    (q = log_find(lg->snapshots_bid, lg->dsnapshots, bid)) != BUN_NONE) {
-
 		if (BUNappend(lg->dsnapshots, &q, FALSE) != GDK_SUCCEED) {
 			logbat_destroy(b);
 			return GDK_FAIL;

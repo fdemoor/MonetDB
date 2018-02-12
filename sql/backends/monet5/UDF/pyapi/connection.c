@@ -109,16 +109,17 @@ Py_END_ALLOW_THREADS;
 	}
 }
 
-static int isRegSupportedType(char c) {
-	/* FIXME multiple int types */
-	switch (c) {
-	case 'i':
-	case 'l':
-		return 1;
-	default:
-		return 0;
+
+static bool isRegSupportedType(PyArrayObject *array, char **return_msg) {
+	int nptype = PyArray_TYPE(array);
+	if (!PyType_IsInteger(nptype) && !PyType_IsFloat(nptype)
+				&& !PyType_IsDouble(nptype)) {
+		sprintf(*return_msg, "unsupported Numpy type: %s", PyType_Format(nptype));
+		return false;
 	}
+	return true;
 }
+
 
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
 {
@@ -128,6 +129,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	Py_ssize_t pos = 0;
 	npy_intp *shape;
 	char *tname, *cname, *sname;
+	char *return_msg = (char *) malloc (1024 * sizeof(char));
 	int bat_type, ndims, nrows = -1;
 	str msg;
 	mvc *sql;
@@ -190,8 +192,8 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			}
 		}
 
-		if (!isRegSupportedType(PyArray_DESCR((PyArrayObject *) value)->type)) {
-			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
+		if (!isRegSupportedType((PyArrayObject *) value, &return_msg)) {
+			PyErr_Format(PyExc_TypeError, "array values type: %s", return_msg);
 			return NULL;
 		}
 
@@ -199,7 +201,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	/* Empty table not allowed */
 	if (pos == 0) {
-		PyErr_Format(PyExc_TypeError, "empty table not allowed");
+		PyErr_Format(PyExc_ValueError, "empty table not allowed");
 		return NULL;
 	}
 
@@ -210,17 +212,17 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	s_old = sql->session->schema;
 	sql->sa = sa_create();
 	if(!sql->sa) {
-		PyErr_Format(PyExc_Exception, "Create table failed: could not create allocator");
+		PyErr_Format(PyExc_RuntimeError, "Create table failed: could not create allocator");
 		goto cleanup;
 	}
 	if (!(s = sql->session->schema = mvc_bind_schema(sql, sname))) {
 		if (!(s = sql->session->schema = mvc_create_schema(sql, sname, ROLE_SYSADMIN, USER_MONETDB))) {
-			PyErr_Format(PyExc_Exception, "Create table failed: could not create pybat schema");
+			PyErr_Format(PyExc_RuntimeError, "Create table failed: could not create pybat schema");
 			goto cleanup;
 		}
 	}
 	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_ABORT, -1))) {
-		PyErr_Format(PyExc_Exception, "Create table failed: could not create table");
+		PyErr_Format(PyExc_RuntimeError, "Create table failed: could not create table");
 		goto cleanup;
 	}
 	t->access = 1; // Read-only
@@ -230,17 +232,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
-		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
-		case 'i':
-			tpe = sql_bind_localtype("int");
-			break;
-		case 'l':
-			tpe = sql_bind_localtype("lng");
-			break;
-		default:
-			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
-		}
-
+		tpe = sql_bind_localtype(ATOMname(PyType_ToBat(PyArray_TYPE((PyArrayObject *) value))));
 		col = NULL;
 		cname = PyString_AsString(key);
 
@@ -258,34 +250,25 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	}
 	msg = create_table_or_view(sql, sname, t->base.name, t, 0);
 	if (msg != MAL_SUCCEED) {
-		PyErr_Format(PyExc_Exception, "Create table failed: %s", msg);
+		PyErr_Format(PyExc_RuntimeError, "Create table failed: %s", msg);
+		freeException(msg);
 		goto cleanup;
 	}
 	t = mvc_bind_table(sql, s, tname);
 	if (!t) {
-		PyErr_Format(PyExc_Exception, "Create table failed: could not bind table");
+		PyErr_Format(PyExc_RuntimeError, "Create table failed: could not bind table");
 		goto cleanup;
 	}
 	t->access = 1; // Read-only
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
-		switch (PyArray_DESCR((PyArrayObject *) value)->type) {
-		case 'i':
-			bat_type = TYPE_int;
-			mem_size = sizeof(int);
-			break;
-		case 'l':
-			bat_type = TYPE_lng;
-			mem_size = sizeof(long);
-			break;
-		default:
-			PyErr_Format(PyExc_TypeError, "Only integers supported in arrays at the moment");
-		}
+		bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
+		mem_size = PyArray_DESCR((PyArrayObject *) value)->elsize;
 
-		b = PyObject_ConvertArrayToBAT((PyArrayObject *) value, bat_type, mem_size);
+		b = PyObject_ConvertArrayToBAT((PyArrayObject *) value, bat_type, mem_size, &return_msg);
 		if (!b) {
-			PyErr_Format(PyExc_Exception, "Error during Array -> BAT conversion");
+			PyErr_Format(PyExc_RuntimeError, "Array->BAT conversion error: %s", return_msg);
 			goto cleanup;
 		}
 
@@ -297,18 +280,20 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		((sql_delta *) col->data)->cnt = b->batCount;
 
 		if (!BBPcacheBAT(b)) {
-			PyErr_Format(PyExc_Exception, "Create table failed: could not cache BAT");
+			PyErr_Format(PyExc_RuntimeError, "Create table failed: could not cache BAT");
 			goto cleanup;
 		}
 
 	}
 
+	free(return_msg);
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
 	sql->session->schema = s_old;
 	return Py_BuildValue("");
 
 cleanup:
+	free(return_msg);
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
 	sql->session->schema = s_old;

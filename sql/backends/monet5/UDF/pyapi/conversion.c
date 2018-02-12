@@ -1171,25 +1171,29 @@ str _conversion_init(void)
 }
 
 
-BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_size)
+BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_size, char **return_msg)
 {
-	/* TODO Add a char **return_msg to give information if NULL returned */
 
-	BAT *b = NULL;
-	char *data;
-	npy_intp ind = 0, *shape;
 	int nrows;
+	char *data;
+	BAT *b = NULL;
+	npy_intp ind = 0, *shape;
 
 	shape = PyArray_SHAPE(array);
 	nrows = shape[0];
 
 	data = (char *) PyArray_GetPtr(array, &ind);
+	if (data == NULL) {
+		sprintf(*return_msg, "could not retrieve data from array");
+		return NULL;
+	}
 
 	b = COLnew(0, bat_type, 0, PERSISTENT);
 	if (b == NULL) {
-		/* TODO Set error message */
+		sprintf(*return_msg, "could not create BAT");
 		return NULL;
 	}
+
 	b->tnil = 0;
 	b->tnonil = 1;
 	b->tkey = 0;
@@ -1201,8 +1205,8 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	GDKfree(b->theap.base);
 	b->theap.base = data;
 	b->theap.size = nrows * mem_size;
-	b->theap.free = b->theap.size;                                                              \
-	b->theap.storage = STORE_CMEM;                                                                \
+	b->theap.free = b->theap.size;
+	b->theap.storage = STORE_CMEM;
 	b->theap.newstorage = STORE_MEM;
 	b->batCount = nrows;
 	b->batCapacity = nrows;

@@ -1204,7 +1204,6 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	b->trevsorted = 0;
 	b->tnil = 0;
 	b->tnonil = 0;
-	/* TODO NaN check if floats allowed */
 	GDKfree(b->theap.base);
 	b->theap.base = data;
 	b->theap.size = nrows * mem_size;

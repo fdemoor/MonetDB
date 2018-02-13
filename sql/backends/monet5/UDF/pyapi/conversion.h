@@ -107,6 +107,7 @@ str _conversion_init(void);
 
 //! Create a BAT from an array
 pyapi_export BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type,
-											 size_t mem_size, char** return_msg);
+											 size_t mem_size, PyArrayObject *mask,
+											 char** return_msg);
 
 #endif /* _PYCONVERSION_LIB_ */

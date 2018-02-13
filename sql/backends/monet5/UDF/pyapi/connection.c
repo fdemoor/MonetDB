@@ -121,6 +121,15 @@ static bool isRegSupportedType(PyArrayObject *array, char **return_msg) {
 }
 
 
+static char *lowerName(char *name) {
+	int i;
+	for (i = 0; name[i]; i++) {
+	  name[i] = tolower(name[i]);
+	}
+	return name;
+}
+
+
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
 {
 
@@ -145,6 +154,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	if (!PyArg_ParseTuple(args, "Os", &dict, &tname)) {
 		return NULL;
 	}
+	tname = lowerName(tname);
 	if (!PyDict_Check(dict)) {
 		PyErr_Format(PyExc_TypeError, "expected a dictionary, but got an object "
 				"of type %s", Py_TYPE(dict)->tp_name);
@@ -164,9 +174,14 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		 * with allowed data types (integers family for now)
 		 */
 
-		if (!PyArray_Check(value)) {
+		if (!PyArray_Check(value)) { /* Masked arrays not supported */
 			PyErr_Format(PyExc_TypeError, "expected a Numpy array as value, but got "
 							"an object of type %s", Py_TYPE(value)->tp_name);
+			return NULL;
+		}
+
+		if (PyType_IsNumpyMaskedArray(value)) {
+			PyErr_Format(PyExc_TypeError, "masked arrays are not supported");
 			return NULL;
 		}
 
@@ -234,7 +249,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 		tpe = sql_bind_localtype(ATOMname(PyType_ToBat(PyArray_TYPE((PyArrayObject *) value))));
 		col = NULL;
-		cname = PyString_AsString(key);
+		cname = lowerName(PyString_AsString(key));
 
 		if (!tpe) {
 			PyErr_Format(PyExc_Exception, "Create table failed: could not find type for the table");
@@ -273,7 +288,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		}
 
 		col = NULL;
-		cname = PyString_AsString(key);
+		cname = lowerName(PyString_AsString(key));
 
 		col = mvc_bind_column(sql, t, cname);
 		b->batCacheid = ((sql_delta *) col->data)->ibid;

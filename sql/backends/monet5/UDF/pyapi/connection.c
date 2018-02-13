@@ -135,7 +135,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 {
 
 	PyObject *dict;
-	PyObject *key, *value;
+	PyObject *key, *value, *mask, *data;
 	Py_ssize_t pos = 0;
 	npy_intp *shape;
 	char *tname, *cname, *sname;
@@ -178,11 +178,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		if (!PyArray_Check(value)) { /* Masked arrays not supported */
 			PyErr_Format(PyExc_TypeError, "expected a Numpy array as value, but got "
 							"an object of type %s", Py_TYPE(value)->tp_name);
-			return NULL;
-		}
-
-		if (PyType_IsNumpyMaskedArray(value)) {
-			PyErr_Format(PyExc_TypeError, "masked arrays are not supported");
 			return NULL;
 		}
 
@@ -282,7 +277,16 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
 		mem_size = PyArray_DESCR((PyArrayObject *) value)->elsize;
 
-		b = PyObject_ConvertArrayToBAT((PyArrayObject *) value, bat_type, mem_size, &return_msg);
+		if (PyType_IsNumpyMaskedArray(value)) {
+			mask = PyObject_GetAttrString(value, "mask");
+			data = PyObject_GetAttrString(value, "data");
+		} else {
+			mask = NULL;
+			data = value;
+		}
+
+		b = PyObject_ConvertArrayToBAT((PyArrayObject *) data, bat_type, mem_size,
+									   	   	   (PyArrayObject *) mask, &return_msg);
 		if (!b) {
 			PyErr_Format(PyExc_RuntimeError, "Array->BAT conversion error: %s", return_msg);
 			goto cleanup;

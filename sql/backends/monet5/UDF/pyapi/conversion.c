@@ -1173,19 +1173,25 @@ str _conversion_init(void)
 	return msg;
 }
 
+#define SET_NULL_VALUE(tpe)                                                   \
+	{                                                                          \
+		(*(tpe *)(&data[i * mem_size])) = tpe##_nil;                           \
+	}
 
-BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_size, char **return_msg)
+BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_size,
+												PyArrayObject *mask, char **return_msg)
 {
 
-	int nrows;
+	int nrows, i;
 	char *data;
+	bool *maskData;
 	BAT *b = NULL;
-	npy_intp ind = 0, *shape;
+	npy_intp *shape;
 
 	shape = PyArray_SHAPE(array);
 	nrows = shape[0];
 
-	data = (char *) PyArray_GetPtr(array, &ind);
+	data = (char *) PyArray_DATA(array);
 	if (data == NULL) {
 		sprintf(*return_msg, "could not retrieve data from array");
 		return NULL;
@@ -1213,6 +1219,54 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	b->batCount = nrows;
 	b->batCapacity = nrows;
 	b->batCopiedtodisk = false;
+
+	if (mask) {
+		maskData = (bool *) PyArray_DATA(mask);
+		if (maskData) {
+			for (i = 0; i < nrows; i++) {
+				if (maskData[i]) {
+					switch (bat_type) {
+					case TYPE_bit:
+						SET_NULL_VALUE(bit);
+						break;
+					case TYPE_bte:
+						SET_NULL_VALUE(bte);
+						break;
+					case TYPE_sht:
+						SET_NULL_VALUE(sht);
+						break;
+					case TYPE_int:
+						SET_NULL_VALUE(int);
+						break;
+					case TYPE_oid:
+						SET_NULL_VALUE(oid);
+						break;
+					case TYPE_lng:
+						SET_NULL_VALUE(lng);
+						break;
+					case TYPE_flt:
+						SET_NULL_VALUE(flt);
+						break;
+					case TYPE_dbl:
+						SET_NULL_VALUE(dbl);
+						break;
+#ifdef HAVE_HGE
+					case TYPE_hge:
+						SET_NULL_VALUE(hge);
+						break;
+#endif
+					default:
+						/* Should not happen as type was already checked before */
+						*return_msg = "invalid bat type";
+						GDKfree(b);
+						return NULL;
+				}
+					b->tnil = 1;
+				}
+			}
+			b->tnonil = 1 - b->tnil;
+		}
+	}
 
 	return b;
 

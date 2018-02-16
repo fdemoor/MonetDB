@@ -51,6 +51,17 @@ bool PyType_IsDouble(int type)
 	}
 }
 
+bool PyType_IsString(int type)
+{
+	switch (type) {
+		case NPY_STRING:
+		case NPY_UNICODE:
+			return true;
+		default:
+			return false;
+	}
+}
+
 char *PyType_Format(int type)
 {
 	switch (type) {

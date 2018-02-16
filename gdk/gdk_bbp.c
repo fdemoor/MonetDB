@@ -3844,8 +3844,11 @@ gdk_bbp_reset(void)
 }
 
 int
-BBPcacheBAT(BAT *b, int regular, bat oldId) {
+BBPcacheBAT(BAT *b, bat oldId) {
 
+	/* FIXME remove this oldId thing, maybe it can be done more nicely */
+
+	int mode;
 	int lock = locked_by ? MT_getpid() != locked_by : 1;
 
 	/* Mark old BBP entry as non valid as it points to the same BAT, and could
@@ -3857,10 +3860,8 @@ BBPcacheBAT(BAT *b, int regular, bat oldId) {
 		return 0;
 	}
 
-	if (!regular) {
-		int mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
-		BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
-	}
+	mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
+	BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
 
 	BATassertProps(b);
 	return 1;

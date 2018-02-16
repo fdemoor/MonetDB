@@ -138,7 +138,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	/* Check arguments */
 
 	if (!PyArg_ParseTuple(args, "Os", &dict, &tname)) {
-		return false;
+		return NULL;
 	}
 	LOWER_NAME(tname);
 
@@ -208,15 +208,15 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
 	sql->sa = sa_create();
 	if(!sql->sa) {
-		PyErr_Format(PyExc_RuntimeError, "Create table failed: could not create allocator");
+		PyErr_Format(PyExc_RuntimeError, "could not create allocator");
 		goto cleanandfail;
 	}
 	if (!(s = mvc_bind_schema(sql, "sys"))) {
-		PyErr_Format(PyExc_RuntimeError, "Create table failed: could not bind schema");
+		PyErr_Format(PyExc_RuntimeError, "could not bind schema");
 		goto cleanandfail;
 	}
 	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_ABORT, -1))) {
-		PyErr_Format(PyExc_RuntimeError, "Create table failed: could not create table");
+		PyErr_Format(PyExc_RuntimeError, "could not create table");
 		goto cleanandfail;
 	}
 	t->base.allocated = 1;
@@ -225,42 +225,39 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
 		tpe = sql_bind_localtype(ATOMname(PyType_ToBat(PyArray_TYPE((PyArrayObject *) value))));
-		col = NULL;
 		cname = PyString_AsString(key);
 		LOWER_NAME(cname);
 
 		if (!tpe) {
-			PyErr_Format(PyExc_Exception, "Create table failed: could not find type for the table");
+			PyErr_Format(PyExc_Exception, "could not find type for the table");
 			goto cleanandfail;
 		}
 
 		col = mvc_create_column(sql, t, cname, tpe);
 		if (!col) {
-			PyErr_Format(PyExc_Exception, "Create table failed: could not create column");
+			PyErr_Format(PyExc_Exception, "could not create column");
 			goto cleanandfail;
 		}
 
 	}
 	msg = create_table_or_view(sql, "sys", t->base.name, t, 0);
 	if (msg != MAL_SUCCEED) {
-		PyErr_Format(PyExc_RuntimeError, "Create table failed: %s", msg);
+		PyErr_Format(PyExc_RuntimeError, "%s", msg);
 		freeException(msg);
 		goto cleanandfail;
 	}
 	t = mvc_bind_table(sql, s, tname);
 	if (!t) {
-		PyErr_Format(PyExc_RuntimeError, "Create table failed: could not bind table");
+		PyErr_Format(PyExc_RuntimeError, "could not bind table");
 		goto cleanandfail;
 	}
 	t->access = 1; // Read-only
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
-		int unicode, regular;
-		bat oldId;
+		int regular;
 
 		nptype = PyArray_TYPE((PyArrayObject *) value);
-		unicode = (nptype == NPY_UNICODE);
 		regular = (PyType_IsString(nptype) == true);
 
 		bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
@@ -274,28 +271,49 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			data = value;
 		}
 
-		b = PyObject_ConvertArrayToBAT((PyArrayObject *) data, bat_type, mem_size,
-									   (PyArrayObject *) mask, unicode, &return_msg);
-		if (!b) {
-			PyErr_Format(PyExc_RuntimeError, "Array->BAT conversion error: %s", return_msg);
-			goto cleanandfail;
-		}
-
-		col = NULL;
 		cname = PyString_AsString(key);
 		LOWER_NAME(cname);
-
 		col = mvc_bind_column(sql, t, cname);
-		oldId = b->batCacheid;
-		b->batCacheid = ((sql_delta *) col->data)->ibid;
-		((sql_delta *) col->data)->cnt = b->batCount;
-		if (regular && b->tvheap) {
-			b->tvheap->parentid = b->batCacheid;
-		}
 
-		if (!BBPcacheBAT(b, regular, oldId)) {
-			PyErr_Format(PyExc_RuntimeError, "Create table failed: could not cache BAT");
-			goto cleanandfail;
+		if (regular) {
+			/* No zero-copy optimization possible, register with a regular
+			 * MonetDB column with data copy
+			 */
+
+			int unicode = (nptype == NPY_UNICODE);
+			bat bid = ((sql_delta *) col->data)->ibid;
+			BBPfix(bid);
+			b = BBPdescriptor(bid);
+			if (!b) {
+				PyErr_Format(PyExc_RuntimeError, "could not get BAT", return_msg);
+				goto cleanandfail;
+			}
+			if (PyObject_FillBATFromArray((PyArrayObject *) data, mem_size,
+					(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
+				PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
+																			return_msg);
+				goto cleanandfail;
+			}
+
+		} else {
+			/* Numeric data types, zero-copy optimization is possible */
+
+			bat oldId;
+			b = PyObject_ConvertArrayToBAT((PyArrayObject *) data, bat_type, mem_size,
+										   (PyArrayObject *) mask, &return_msg);
+			if (!b) {
+				PyErr_Format(PyExc_RuntimeError, "array->BAT conversion: %s", return_msg);
+				goto cleanandfail;
+			}
+
+			oldId = b->batCacheid;
+			b->batCacheid = ((sql_delta *) col->data)->ibid;
+			((sql_delta *) col->data)->cnt = b->batCount;
+
+			if (!BBPcacheBAT(b, oldId)) {
+				PyErr_Format(PyExc_RuntimeError, "could not cache BAT");
+				goto cleanandfail;
+			}
 		}
 
 	}

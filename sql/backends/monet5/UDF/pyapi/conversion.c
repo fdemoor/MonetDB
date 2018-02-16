@@ -1174,17 +1174,17 @@ str _conversion_init(void)
 }
 
 #define SET_NULL_VALUE(tpe)                                                   \
-	{                                                                          \
-		(*(tpe *)(&data[i * mem_size])) = tpe##_nil;                           \
+	{                                                                         \
+		(*(tpe *)(&data[i * mem_size])) = tpe##_nil;                          \
 	}
 
 BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_size,
-												PyArrayObject *mask, char **return_msg)
+							PyArrayObject *mask, int unicode, char **return_msg)
 {
 
 	int nrows, i;
-	char *data;
-	bool *maskData;
+	char *data, *utf8_string = NULL;
+	bool *maskData = NULL;
 	BAT *b = NULL;
 	npy_intp *shape;
 
@@ -1195,6 +1195,10 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	if (data == NULL) {
 		sprintf(*return_msg, "could not retrieve data from array");
 		return NULL;
+	}
+
+	if (mask != NULL) {
+		maskData = (bool *) PyArray_DATA(mask);
 	}
 
 	b = COLnew(0, bat_type, 0, PERSISTENT);
@@ -1208,23 +1212,77 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	b->tkey = 0;
 	b->tsorted = 0;
 	b->trevsorted = 0;
-	b->tnil = 0;
-	b->tnonil = 0;
-	GDKfree(b->theap.base);
-	b->theap.base = data;
-	b->theap.size = nrows * mem_size;
-	b->theap.free = b->theap.size;
-	b->theap.storage = STORE_CMEM;
-	b->theap.newstorage = STORE_MEM;
-	b->batCount = nrows;
-	b->batCapacity = nrows;
-	b->batCopiedtodisk = false;
+	b->tnonil = 1;
 
-	if (mask) {
-		maskData = (bool *) PyArray_DATA(mask);
-		if (maskData) {
+	switch (bat_type) {
+
+	case TYPE_str:
+
+		utf8_string = GDKzalloc(utf8string_minlength + mem_size + 1);
+		utf8_string[utf8string_minlength + mem_size] = '\0';
+
+		for (i = 0; i < nrows; i++) {
+
+			if (unicode) {
+
+				if (maskData != NULL && maskData[i] == TRUE) {
+					b->tnil = 1;
+					if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
+						sprintf(*return_msg, "BUNappend failed");
+						goto cleanandfail;
+					}
+				} else {
+					utf32_to_utf8(0, mem_size / 4, utf8_string,
+						(const Py_UNICODE *)(&data[i * mem_size]));
+					if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
+						sprintf(*return_msg, "BUNappend failed");
+						goto cleanandfail;
+					}
+				}
+
+			} else {
+
+				if (maskData != NULL && maskData[i] == TRUE) {
+					b->tnil = 1;
+					if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
+						sprintf(*return_msg, "BUNappend failed");
+						goto cleanandfail;
+					}
+				} else {
+					if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
+						sprintf(*return_msg, "invalid string encoding used: "
+							"expecting a regular ASCII string, or a Numpy_Unicode object");
+						goto cleanandfail;
+					}
+					if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
+						sprintf(*return_msg, "BUNappend failed");
+						goto cleanandfail;
+
+					}
+				}
+
+			}
+
+		}
+
+		if (utf8_string) {
+			GDKfree(utf8_string);
+		}
+		break;
+
+	default:
+
+		GDKfree(b->theap.base);
+		b->theap.base = data;
+		b->theap.size = nrows * mem_size;
+		b->theap.free = b->theap.size;
+		b->theap.storage = STORE_CMEM;
+		b->theap.newstorage = STORE_MEM;
+
+		if (maskData != NULL) {
 			for (i = 0; i < nrows; i++) {
-				if (maskData[i]) {
+				if (maskData[i] == TRUE) {
+					b->tnil = 1;
 					switch (bat_type) {
 					case TYPE_bit:
 						SET_NULL_VALUE(bit);
@@ -1237,9 +1295,6 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 						break;
 					case TYPE_int:
 						SET_NULL_VALUE(int);
-						break;
-					case TYPE_oid:
-						SET_NULL_VALUE(oid);
 						break;
 					case TYPE_lng:
 						SET_NULL_VALUE(lng);
@@ -1256,18 +1311,28 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 						break;
 #endif
 					default:
-						/* Should not happen as type was already checked before */
-						*return_msg = "invalid bat type";
-						GDKfree(b);
-						return NULL;
-				}
-					b->tnil = 1;
+						sprintf(*return_msg, "invalid bat type: %s", BatType_Format(bat_type));
+						goto cleanandfail;
+					}
 				}
 			}
-			b->tnonil = 1 - b->tnil;
 		}
+		break;
+
 	}
 
+	b->tnonil = 1 - b->tnil;
+	b->batCount = nrows;
+	b->batCapacity = nrows;
+	b->batCopiedtodisk = false;
+	BATsettrivprop(b);
 	return b;
+
+cleanandfail:
+	GDKfree(b);
+	if (utf8_string) {
+		GDKfree(utf8_string);
+	}
+	return NULL;
 
 }

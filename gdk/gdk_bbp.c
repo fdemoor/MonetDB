@@ -3976,15 +3976,24 @@ gdk_bbp_reset(void)
 }
 
 int
-BBPcacheBAT(BAT *b) {
+BBPcacheBAT(BAT *b, int regular, bat oldId) {
+
 	int lock = locked_by ? MT_getpid() != locked_by : 1;
-	int mode;
+
+	/* Mark old BBP entry as non valid as it points to the same BAT, and could
+	 * result in trying to free an already freed BAT...
+	 */
+	BBP_logical(oldId) = NULL;
 
 	if (BBPcacheit(b, lock) != GDK_SUCCEED) {
 		return 0;
 	}
-	mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
-	BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
+
+	if (!regular) {
+		int mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
+		BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
+	}
+
 	BATassertProps(b);
 	return 1;
 }

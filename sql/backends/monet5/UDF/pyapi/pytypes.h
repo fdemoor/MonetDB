@@ -36,6 +36,8 @@ pyapi_export bool PyType_IsInteger(int);
 pyapi_export bool PyType_IsFloat(int);
 //! Returns true if a NPY_#type is a double type, and false otherwise
 pyapi_export bool PyType_IsDouble(int);
+//! Returns true if a NPY_#type is a string type, and false otherwise
+pyapi_export bool PyType_IsString(int);
 //! Formats NPY_#type as a String (so NPY_INT => "INT"), for usage in error
 //! reporting and warnings
 pyapi_export char *PyType_Format(int);

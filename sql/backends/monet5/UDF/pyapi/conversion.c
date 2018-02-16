@@ -1179,11 +1179,11 @@ str _conversion_init(void)
 	}
 
 BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_size,
-							PyArrayObject *mask, int unicode, char **return_msg)
+								PyArrayObject *mask, char **return_msg)
 {
 
 	int nrows, i;
-	char *data, *utf8_string = NULL;
+	char *data;
 	bool *maskData = NULL;
 	BAT *b = NULL;
 	npy_intp *shape;
@@ -1214,111 +1214,50 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	b->trevsorted = 0;
 	b->tnonil = 1;
 
-	switch (bat_type) {
+	GDKfree(b->theap.base);
+	b->theap.base = data;
+	b->theap.size = nrows * mem_size;
+	b->theap.free = b->theap.size;
+	b->theap.storage = STORE_CMEM;
+	b->theap.newstorage = STORE_MEM;
 
-	case TYPE_str:
-
-		utf8_string = GDKzalloc(utf8string_minlength + mem_size + 1);
-		utf8_string[utf8string_minlength + mem_size] = '\0';
-
+	if (maskData != NULL) {
 		for (i = 0; i < nrows; i++) {
-
-			if (unicode) {
-
-				if (maskData != NULL && maskData[i] == TRUE) {
-					b->tnil = 1;
-					if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
-						sprintf(*return_msg, "BUNappend failed");
-						goto cleanandfail;
-					}
-				} else {
-					utf32_to_utf8(0, mem_size / 4, utf8_string,
-						(const Py_UNICODE *)(&data[i * mem_size]));
-					if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
-						sprintf(*return_msg, "BUNappend failed");
-						goto cleanandfail;
-					}
-				}
-
-			} else {
-
-				if (maskData != NULL && maskData[i] == TRUE) {
-					b->tnil = 1;
-					if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
-						sprintf(*return_msg, "BUNappend failed");
-						goto cleanandfail;
-					}
-				} else {
-					if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
-						sprintf(*return_msg, "invalid string encoding used: "
-							"expecting a regular ASCII string, or a Numpy_Unicode object");
-						goto cleanandfail;
-					}
-					if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
-						sprintf(*return_msg, "BUNappend failed");
-						goto cleanandfail;
-
-					}
-				}
-
-			}
-
-		}
-
-		if (utf8_string) {
-			GDKfree(utf8_string);
-		}
-		break;
-
-	default:
-
-		GDKfree(b->theap.base);
-		b->theap.base = data;
-		b->theap.size = nrows * mem_size;
-		b->theap.free = b->theap.size;
-		b->theap.storage = STORE_CMEM;
-		b->theap.newstorage = STORE_MEM;
-
-		if (maskData != NULL) {
-			for (i = 0; i < nrows; i++) {
-				if (maskData[i] == TRUE) {
-					b->tnil = 1;
-					switch (bat_type) {
-					case TYPE_bit:
-						SET_NULL_VALUE(bit);
-						break;
-					case TYPE_bte:
-						SET_NULL_VALUE(bte);
-						break;
-					case TYPE_sht:
-						SET_NULL_VALUE(sht);
-						break;
-					case TYPE_int:
-						SET_NULL_VALUE(int);
-						break;
-					case TYPE_lng:
-						SET_NULL_VALUE(lng);
-						break;
-					case TYPE_flt:
-						SET_NULL_VALUE(flt);
-						break;
-					case TYPE_dbl:
-						SET_NULL_VALUE(dbl);
-						break;
+			if (maskData[i] == TRUE) {
+				b->tnil = 1;
+				switch (bat_type) {
+				case TYPE_bit:
+					SET_NULL_VALUE(bit);
+					break;
+				case TYPE_bte:
+					SET_NULL_VALUE(bte);
+					break;
+				case TYPE_sht:
+					SET_NULL_VALUE(sht);
+					break;
+				case TYPE_int:
+					SET_NULL_VALUE(int);
+					break;
+				case TYPE_lng:
+					SET_NULL_VALUE(lng);
+					break;
+				case TYPE_flt:
+					SET_NULL_VALUE(flt);
+					break;
+				case TYPE_dbl:
+					SET_NULL_VALUE(dbl);
+					break;
 #ifdef HAVE_HGE
-					case TYPE_hge:
-						SET_NULL_VALUE(hge);
-						break;
+				case TYPE_hge:
+					SET_NULL_VALUE(hge);
+					break;
 #endif
-					default:
-						sprintf(*return_msg, "invalid bat type: %s", BatType_Format(bat_type));
-						goto cleanandfail;
-					}
+				default:
+					sprintf(*return_msg, "invalid bat type: %s", BatType_Format(bat_type));
+					goto cleanandfail;
 				}
 			}
 		}
-		break;
-
 	}
 
 	b->tnonil = 1 - b->tnil;
@@ -1330,9 +1269,88 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 
 cleanandfail:
 	GDKfree(b);
+	return NULL;
+
+}
+
+
+bool PyObject_FillBATFromArray(PyArrayObject *array, int mem_size, PyArrayObject *mask,
+							   int unicode, BAT *b, char **return_msg) {
+
+	int nrows, i;
+	npy_intp *shape;
+	bool *maskData = NULL;
+	char *utf8_string, *data;
+
+	utf8_string = GDKzalloc(utf8string_minlength + mem_size + 1);
+	utf8_string[utf8string_minlength + mem_size] = '\0';
+	shape = PyArray_SHAPE(array);
+	nrows = shape[0];
+
+	data = (char *) PyArray_DATA(array);
+	if (data == NULL) {
+		sprintf(*return_msg, "could not retrieve data from array");
+		return false;
+	}
+
+	if (mask != NULL) {
+		maskData = (bool *) PyArray_DATA(mask);
+	}
+
+	BAThrestricted(b) = 0;
+
+	for (i = 0; i < nrows; i++) {
+
+		if (unicode) {
+
+			if (maskData != NULL && maskData[i] == TRUE) {
+				b->tnil = 1;
+				if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
+					sprintf(*return_msg, "BUNappend failed");
+					goto cleanandfail;
+				}
+			} else {
+				utf32_to_utf8(0, mem_size / 4, utf8_string,
+					(const Py_UNICODE *)(&data[i * mem_size]));
+				if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
+					sprintf(*return_msg, "BUNappend failed");
+					goto cleanandfail;
+				}
+			}
+
+		} else {
+
+			if (maskData != NULL && maskData[i] == TRUE) {
+				b->tnil = 1;
+				if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
+					sprintf(*return_msg, "BUNappend failed");
+					goto cleanandfail;
+				}
+			} else {
+				if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
+					sprintf(*return_msg, "invalid string encoding used: "
+						"expecting a regular ASCII string, or a Numpy_Unicode object");
+					goto cleanandfail;
+				}
+				if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
+					sprintf(*return_msg, "BUNappend failed");
+					goto cleanandfail;
+
+				}
+			}
+
+		}
+
+	}
+
 	if (utf8_string) {
 		GDKfree(utf8_string);
 	}
-	return NULL;
+	return true;
 
+cleanandfail:
+	if (utf8_string) {
+		GDKfree(utf8_string);
+	}
+	return false;
 }

@@ -299,7 +299,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		} else {
 			/* Numeric data types, zero-copy optimization is possible */
 
-			bat oldId;
+			bat id;
 			b = PyObject_ConvertArrayToBAT((PyArrayObject *) data, bat_type, mem_size,
 										   (PyArrayObject *) mask, &return_msg);
 			if (!b) {
@@ -307,11 +307,10 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				goto cleanandfail;
 			}
 
-			oldId = b->batCacheid;
-			b->batCacheid = ((sql_delta *) col->data)->ibid;
+			id = ((sql_delta *) col->data)->ibid;
 			((sql_delta *) col->data)->cnt = b->batCount;
 
-			if (!BBPcacheBAT(b, oldId)) {
+			if (!BBPcacheBAT(b, id)) {
 				PyErr_Format(PyExc_RuntimeError, "could not cache BAT");
 				goto cleanandfail;
 			}

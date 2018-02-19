@@ -700,6 +700,10 @@ la_bat_use(logger *lg, logaction *la)
 	BAT *b = BATdescriptor(bid);
 	BUN p;
 
+	if (BBP_status(bid) & BBPPYTHONBAT) {
+		return GDK_SUCCEED;
+	}
+
 	assert(la->nr <= (lng) INT_MAX);
 	if (b == NULL) {
 		GDKerror("logger: could not use bat (%d) for %s\n", (int) bid, la->name);

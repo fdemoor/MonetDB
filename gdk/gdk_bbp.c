@@ -3976,22 +3976,84 @@ gdk_bbp_reset(void)
 }
 
 int
-BBPcacheBAT(BAT *b, bat oldId) {
-
-	/* FIXME remove this oldId thing, maybe it can be done more nicely */
+BBPcacheBAT(BAT *b, bat id) {
 
 	int mode;
 	int lock = locked_by ? MT_getpid() != locked_by : 1;
+	bat oldId = b->batCacheid;
+	BAT *oldB;
 
-	/* Mark old BBP entry as non valid as it points to the same BAT, and could
-	 * result in trying to free an already freed BAT...
-	 */
-	BBP_logical(oldId) = NULL;
+	/* Clear the old BBP entry, but do not free the BAT */
+	if (BBPcheck(oldId, "BBPcacheBAT")) {
+		int idx = threadmask(MT_getpid());
+		BBPuncacheit(oldId, FALSE);
+		BBP_desc(oldId) = NULL;
+		BBP_status_set(oldId, BBPUNLOADING, "BBPclear");
+		BBP_refs(oldId) = 0;
+		BBP_lrefs(oldId) = 0;
+		if (lock) {
+			MT_lock_set(&GDKcacheLock(idx));
+		}
+		if (BBPtmpcheck(BBP_logical(oldId)) == 0) {
+			MT_lock_set(&GDKnameLock);
+			BBP_delete(oldId);
+			MT_lock_unset(&GDKnameLock);
+		}
+		if (BBP_logical(oldId) != BBP_bak(oldId)) {
+			GDKfree(BBP_logical(oldId));
+		}
+		BBP_status_set(oldId, 0, "BBPcacheBAT");
+		BBP_logical(oldId) = NULL;
+		BBP_next(oldId) = BBP_free(idx);
+		BBP_free(idx) = oldId;
+		if (lock) {
+			MT_lock_unset(&GDKcacheLock(idx));
+		}
+	}
 
+	/* Free the old BAT that was created but keep the BBP entry */
+	BBPfix(id);
+	oldB = BBPdescriptor(id);
+	if (oldB) {
+		bat tp = oldB->theap.parentid;
+		bat vtp = VIEWvtparent(oldB);
+
+		if (isVIEW(oldB)) {	/* a physical view */
+			VIEWdestroy(oldB);
+		} else {
+			/* bats that get destroyed must unfix their atoms */
+			int (*tunfix) (const void *) = BATatoms[oldB->ttype].atomUnfix;
+			BUN p, q;
+			BATiter bi = bat_iterator(oldB);
+
+			assert(oldB->batSharecnt == 0);
+			if (tunfix) {
+				BATloop(oldB, p, q) {
+					(*tunfix) (BUNtail(bi, p));
+				}
+			}
+			BATdelete(oldB);	/* handles persistent case also (file deletes) */
+		}
+
+		/* parent released when completely done with child */
+		if (tp) {
+			GDKunshare(tp);
+		}
+		if (vtp) {
+			GDKunshare(vtp);
+		}
+	}
+
+	/* Cache the BAT */
+
+	b->batCacheid = id;
 	if (BBPcacheit(b, lock) != GDK_SUCCEED) {
 		return 0;
 	}
 
+	/* Set a special mask to know it is not a real BAT and everything disk-related
+	 * should be skipped
+	 */
 	mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
 	BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
 

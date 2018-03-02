@@ -119,11 +119,11 @@ Py_END_ALLOW_THREADS;
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
 {
 
-	PyObject *dict;
-	PyObject *key, *value, *mask, *data;
+	PyObject *dict, *options, *options_default;
+	PyObject *key, *value, *mask, *data, *opt;
 	Py_ssize_t pos = 0;
 	npy_intp *shape;
-	char *tname, *cname;
+	char *tname, *cname, *oname;
 	char *return_msg = (char *) malloc (1024 * sizeof(char));
 	int bat_type, ndims, nrows = -1, i, nptype;
 	str msg;
@@ -137,15 +137,26 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	/* Check arguments */
 
-	if (!PyArg_ParseTuple(args, "Os", &dict, &tname)) {
-		return NULL;
+	options_default = PyDict_New();
+	options = NULL;
+	if (!options_default) {
+		PyErr_Format(PyExc_ValueError, "can't create an empty dictionary for default options");
+		goto cleanandfail0;
+	}
+
+	if (!PyArg_ParseTuple(args, "Os|O", &dict, &tname, &options)) {
+		goto cleanandfail0;
 	}
 	LOWER_NAME(tname);
+
+	if (!options) {
+		options = options_default;
+	}
 
 	if (!PyDict_Check(dict)) {
 		PyErr_Format(PyExc_TypeError, "expected a dictionary, but got an object "
 				"of type %s", Py_TYPE(dict)->tp_name);
-		return NULL;
+		goto cleanandfail0;
 	}
 
 	while (PyDict_Next(dict, &pos, &key, &value)) {
@@ -154,7 +165,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		if (!PyString_Check(key)) {
 			PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
 							"of type %s", Py_TYPE(key)->tp_name);
-			return NULL;
+			goto cleanandfail0;
 		}
 
 		/* Column values should be single dimension non-empty Numpy arrays
@@ -164,19 +175,19 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		if (!PyArray_Check(value)) {
 			PyErr_Format(PyExc_TypeError, "expected a Numpy array as value, but got "
 							"an object of type %s", Py_TYPE(value)->tp_name);
-			return NULL;
+			goto cleanandfail0;
 		}
 
 		ndims = PyArray_NDIM((PyArrayObject *) value);
 		if (ndims > 1) {
 			PyErr_Format(PyExc_TypeError, "expecting a single dimension Numpy array");
-			return NULL;
+			goto cleanandfail0;
 		}
 
 		shape = PyArray_SHAPE((PyArrayObject *) value);
 		if (shape[0] <= 0) {
 			PyErr_Format(PyExc_TypeError, "a column cannot be empty ");
-			return NULL;
+			goto cleanandfail0;
 		}
 
 		if (nrows == -1) {
@@ -185,7 +196,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			if (shape[0] != nrows) {
 				PyErr_Format(PyExc_TypeError, "all the columns must have the same "
 											  "number of elements");
-				return NULL;
+				goto cleanandfail0;
 			}
 		}
 
@@ -193,14 +204,54 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		if (!PyType_IsInteger(nptype) && !PyType_IsFloat(nptype)
 					&& !PyType_IsDouble(nptype) && !PyType_IsString(nptype)) {
 			PyErr_Format(PyExc_TypeError, "array values type: unsupported Numpy type: %s", PyType_Format(nptype));
-			return NULL;
+			goto cleanandfail0;
 		}
 
 	}
 
 	if (pos == 0) { /* Empty table not allowed */
 		PyErr_Format(PyExc_ValueError, "empty table not allowed");
-		return NULL;
+		goto cleanandfail0;
+	}
+
+	pos = 0;
+	while (PyDict_Next(options, &pos, &key, &value)) {
+
+			/* Column names should be strings */
+			if (!PyString_Check(key)) {
+				PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
+								"of type %s", Py_TYPE(key)->tp_name);
+				goto cleanandfail0;
+			}
+
+			/* Column values should be strings */
+
+			if (!PyString_Check(value)) {
+				PyErr_Format(PyExc_TypeError, "expected a string as option, but got an object "
+						"of type %s", Py_TYPE(key)->tp_name);
+				goto cleanandfail0;
+			}
+			oname = PyString_AsString(value);
+
+			/* TODO make a function or a macro of the following code? remove hard-coding
+			 * Why check all values? check only those with a
+			 * valid key, so only at exec time? */
+			{
+				int k;
+				char *all_options[3] = {"date", "daytime", "timestamp"};
+				for (k = 0; k < 3; k++) {
+					if (strcmp(oname, all_options[k]) == 0) {
+						break;
+					}
+				}
+				if (k == 3) {
+					PyErr_Format(PyExc_TypeError, "unrecognized option %s"
+						"available options are: date, daytime, timestamp", oname);
+					goto cleanandfail0;
+				}
+			}
+			/* */
+
 	}
 
 	/* Register the table */
@@ -224,7 +275,25 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
-		tpe = sql_bind_localtype(ATOMname(PyType_ToBat(PyArray_TYPE((PyArrayObject *) value))));
+		/* TODO Following code is used twice, make a macro */
+		opt = PyDict_GetItem(options, key);
+		if (opt) {
+			oname = PyString_AsString(opt); // Already checked, we know it's a string
+			if (strcmp(oname, "date") == 0) {
+				bat_type = TYPE_date;
+			} else if (strcmp(oname, "daytime") == 0) {
+				bat_type = TYPE_daytime;
+			} else if (strcmp(oname, "timestamp") == 0) {
+				bat_type = TYPE_timestamp;
+			} else {
+				bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
+			}
+		} else {
+			bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
+		}
+		/* */
+
+		tpe = sql_bind_localtype(ATOMname(bat_type));
 		cname = PyString_AsString(key);
 		LOWER_NAME(cname);
 
@@ -260,7 +329,24 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		nptype = PyArray_TYPE((PyArrayObject *) value);
 		regular = (PyType_IsString(nptype) == true);
 
-		bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
+		/* TODO Following code is used twice, make a macro */
+		opt = PyDict_GetItem(options, key);
+		if (opt) {
+			oname = PyString_AsString(opt); // Already checked, we know it's a string
+			if (strcmp(oname, "date") == 0) {
+				bat_type = TYPE_date;
+			} else if (strcmp(oname, "daytime") == 0) {
+				bat_type = TYPE_daytime;
+			} else if (strcmp(oname, "timestamp") == 0) {
+				bat_type = TYPE_timestamp;
+			} else {
+				bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
+			}
+		} else {
+			bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
+		}
+		/* */
+
 		mem_size = PyArray_DESCR((PyArrayObject *) value)->elsize;
 
 		if (PyType_IsNumpyMaskedArray(value)) {
@@ -288,7 +374,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				PyErr_Format(PyExc_RuntimeError, "could not get BAT", return_msg);
 				goto cleanandfail;
 			}
-			if (PyObject_FillBATFromArray((PyArrayObject *) data, TYPE_str, mem_size,
+			if (PyObject_FillBATFromArray((PyArrayObject *) data, bat_type, mem_size,
 					(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
 				PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
 																			return_msg);
@@ -317,15 +403,18 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	}
 
+	Py_DECREF(options_default);
 	free(return_msg);
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
 	return Py_BuildValue("");
 
 cleanandfail:
-	free(return_msg);
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
+cleanandfail0:
+	Py_XDECREF(options_default);
+	free(return_msg);
 	return NULL;
 
 }

@@ -1270,9 +1270,64 @@ cleanandfail:
 
 }
 
+#define APPEND_FROM_VALUE(x)                                                  \
+	if (BUNappend(b, &(x), FALSE) != GDK_SUCCEED) {                           \
+		sprintf(*return_msg, "BUNappend failed");                             \
+		goto cleanandfail;                                                    \
+	}
 
-bool PyObject_FillBATFromArray(PyArrayObject *array, int mem_size, PyArrayObject *mask,
-							   int unicode, BAT *b, char **return_msg) {
+#define APPEND_FROM_POINTER(x)                                                \
+	if (BUNappend(b, (x), FALSE) != GDK_SUCCEED) {                            \
+		sprintf(*return_msg, "BUNappend failed");                             \
+		goto cleanandfail;                                                    \
+	}
+
+#define CONVERT_AND_APPEND_TEMPORAL(tprl)                                     \
+	tprl x;                                                                   \
+	str msg = str_2_##tprl(&x, &utf8_string);                                 \
+	if (msg) {                                                                \
+		sprintf(*return_msg, "Failed to convert from string to date: "        \
+ 	 	 	 	 	 	 	 "%s", msg);                                      \
+		goto cleanandfail;                                                    \
+	}                                                                         \
+	APPEND_FROM_VALUE(x);
+
+#define CONVERT_AND_APPEND()                                                  \
+	if (bat_type == TYPE_str) {                                               \
+		APPEND_FROM_POINTER(utf8_string);                                     \
+	} else if (bat_type == TYPE_date) {                                       \
+		CONVERT_AND_APPEND_TEMPORAL(date);                                    \
+	} else if (bat_type == TYPE_daytime) {                                    \
+		CONVERT_AND_APPEND_TEMPORAL(daytime);                                 \
+	} else if (bat_type == TYPE_timestamp) {                                  \
+		CONVERT_AND_APPEND_TEMPORAL(timestamp);                               \
+	} else {                                                                  \
+		sprintf(*return_msg, "invalid bat type: %s",                          \
+				BatType_Format(bat_type));                                    \
+		goto cleanandfail;                                                    \
+	}
+
+#define CONVERT_AND_APPEND_NIL()                                              \
+	if (bat_type == TYPE_str) {                                               \
+		APPEND_FROM_POINTER(str_nil);                                         \
+	} else if (bat_type == TYPE_date) {                                       \
+		date x = date_nil;                                                    \
+		APPEND_FROM_VALUE(x);                                                 \
+	} else if (bat_type == TYPE_daytime) {                                    \
+		daytime x = daytime_nil;                                              \
+		APPEND_FROM_VALUE(x);                                                 \
+	} else if (bat_type == TYPE_timestamp) {                                  \
+		timestamp x = *timestamp_nil;                                         \
+		APPEND_FROM_VALUE(x);                                                 \
+	} else {                                                                  \
+		sprintf(*return_msg, "invalid bat type: %s",                          \
+				BatType_Format(bat_type));                                    \
+		goto cleanandfail;                                                    \
+	}
+
+bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type, int mem_size,
+							   PyArrayObject *mask, int unicode,
+							   BAT *b, char **return_msg) {
 
 	int nrows, i;
 	npy_intp *shape;
@@ -1302,38 +1357,25 @@ bool PyObject_FillBATFromArray(PyArrayObject *array, int mem_size, PyArrayObject
 
 			if (maskData != NULL && maskData[i] == TRUE) {
 				b->tnil = 1;
-				if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
-					sprintf(*return_msg, "BUNappend failed");
-					goto cleanandfail;
-				}
+				CONVERT_AND_APPEND_NIL();
 			} else {
 				utf32_to_utf8(0, mem_size / 4, utf8_string,
 					(const Py_UNICODE *)(&data[i * mem_size]));
-				if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
-					sprintf(*return_msg, "BUNappend failed");
-					goto cleanandfail;
-				}
+				CONVERT_AND_APPEND();
 			}
 
 		} else {
 
 			if (maskData != NULL && maskData[i] == TRUE) {
 				b->tnil = 1;
-				if (convert_and_append(b, str_nil, FALSE) != GDK_SUCCEED) {
-					sprintf(*return_msg, "BUNappend failed");
-					goto cleanandfail;
-				}
+				CONVERT_AND_APPEND_NIL();
 			} else {
 				if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
 					sprintf(*return_msg, "invalid string encoding used: "
 						"expecting a regular ASCII string, or a Numpy_Unicode object");
 					goto cleanandfail;
 				}
-				if (convert_and_append(b, utf8_string, FALSE) != GDK_SUCCEED) {
-					sprintf(*return_msg, "BUNappend failed");
-					goto cleanandfail;
-
-				}
+				CONVERT_AND_APPEND();
 			}
 
 		}

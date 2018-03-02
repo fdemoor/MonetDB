@@ -110,8 +110,8 @@ pyapi_export BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type,
 											 size_t mem_size, PyArrayObject *mask,
 											 char** return_msg);
 //! Fill an existing BAT with data from an array
-pyapi_export bool PyObject_FillBATFromArray(PyArrayObject *array, int mem_size,
-									  	    PyArrayObject *mask, int unicode,
-											BAT *b, char **return_msg);
+pyapi_export bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type,
+											int mem_size, PyArrayObject *mask,
+											int unicode, BAT *b, char **return_msg);
 
 #endif /* _PYCONVERSION_LIB_ */

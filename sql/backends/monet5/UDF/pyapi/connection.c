@@ -288,7 +288,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				PyErr_Format(PyExc_RuntimeError, "could not get BAT", return_msg);
 				goto cleanandfail;
 			}
-			if (PyObject_FillBATFromArray((PyArrayObject *) data, mem_size,
+			if (PyObject_FillBATFromArray((PyArrayObject *) data, TYPE_str, mem_size,
 					(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
 				PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
 																			return_msg);

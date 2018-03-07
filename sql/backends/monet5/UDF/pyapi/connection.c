@@ -117,6 +117,36 @@ Py_END_ALLOW_THREADS;
 		(name)[i] = tolower((name)[i]);                                       \
 	}
 
+#define ASSIGN_TYPE(tpe)                                                      \
+	if (!regular) {                                                           \
+		PyErr_Format(PyExc_ValueError,                                        \
+			"trying to apply option %s to a non-string array for column %s",  \
+			#tpe, cname);                                                     \
+		goto cleanandfail;                                                    \
+	}                                                                         \
+	bat_type = TYPE_##tpe;
+
+#define ASSIGN_BAT_TYPE()                                                     \
+	opt = PyDict_GetItem(options, key);                                       \
+	if (opt) {                                                                \
+		oname = PyString_AsString(opt);                                       \
+		if (strcmp(oname, "date") == 0) {                                     \
+			ASSIGN_TYPE(date)                                                 \
+		} else if (strcmp(oname, "daytime") == 0) {                           \
+			ASSIGN_TYPE(daytime)                                              \
+		} else if (strcmp(oname, "timestamp") == 0) {                         \
+			ASSIGN_TYPE(timestamp)                                            \
+		} else {                                                              \
+			PyErr_Format(PyExc_ValueError,                                    \
+				"unrecognized option for column %s: %s "                      \
+				"(available options are: date, daytime, timestamp)",          \
+				cname, oname);                                                \
+			goto cleanandfail;                                                \
+		}                                                                     \
+	} else {                                                                  \
+		bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));       \
+	}
+
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
 {
 
@@ -226,32 +256,11 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			}
 
 			/* Column values should be strings */
-
 			if (!PyString_Check(value)) {
 				PyErr_Format(PyExc_TypeError, "expected a string as option, but got an object "
 						"of type %s", Py_TYPE(key)->tp_name);
 				goto cleanandfail0;
 			}
-			oname = PyString_AsString(value);
-
-			/* TODO make a function or a macro of the following code? remove hard-coding
-			 * Why check all values? check only those with a
-			 * valid key, so only at exec time? */
-			{
-				int k;
-				char *all_options[3] = {"date", "daytime", "timestamp"};
-				for (k = 0; k < 3; k++) {
-					if (strcmp(oname, all_options[k]) == 0) {
-						break;
-					}
-				}
-				if (k == 3) {
-					PyErr_Format(PyExc_TypeError, "unrecognized option %s"
-						"available options are: date, daytime, timestamp", oname);
-					goto cleanandfail0;
-				}
-			}
-			/* */
 
 	}
 
@@ -276,27 +285,13 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
-		/* TODO Following code is used twice, make a macro */
-		opt = PyDict_GetItem(options, key);
-		if (opt) {
-			oname = PyString_AsString(opt); // Already checked, we know it's a string
-			if (strcmp(oname, "date") == 0) {
-				bat_type = TYPE_date;
-			} else if (strcmp(oname, "daytime") == 0) {
-				bat_type = TYPE_daytime;
-			} else if (strcmp(oname, "timestamp") == 0) {
-				bat_type = TYPE_timestamp;
-			} else {
-				bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
-			}
-		} else {
-			bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
-		}
-		/* */
-
-		tpe = sql_bind_localtype(ATOMname(bat_type));
+		int regular;
+		nptype = PyArray_TYPE((PyArrayObject *) value);
+		regular = (PyType_IsString(nptype) == true);
 		cname = PyString_AsString(key);
 		LOWER_NAME(cname);
+		ASSIGN_BAT_TYPE()
+		tpe = sql_bind_localtype(ATOMname(bat_type));
 
 		if (!tpe) {
 			PyErr_Format(PyExc_Exception, "could not find type for the table");
@@ -326,28 +321,11 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
 		int regular;
-
 		nptype = PyArray_TYPE((PyArrayObject *) value);
 		regular = (PyType_IsString(nptype) == true);
-
-		/* TODO Following code is used twice, make a macro */
-		opt = PyDict_GetItem(options, key);
-		if (opt) {
-			oname = PyString_AsString(opt); // Already checked, we know it's a string
-			if (strcmp(oname, "date") == 0) {
-				bat_type = TYPE_date;
-			} else if (strcmp(oname, "daytime") == 0) {
-				bat_type = TYPE_daytime;
-			} else if (strcmp(oname, "timestamp") == 0) {
-				bat_type = TYPE_timestamp;
-			} else {
-				bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
-			}
-		} else {
-			bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));
-		}
-		/* */
-
+		cname = PyString_AsString(key);
+		LOWER_NAME(cname);
+		ASSIGN_BAT_TYPE()
 		mem_size = PyArray_DESCR((PyArrayObject *) value)->elsize;
 
 		if (PyType_IsNumpyMaskedArray(value)) {
@@ -358,8 +336,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			data = value;
 		}
 
-		cname = PyString_AsString(key);
-		LOWER_NAME(cname);
 		col = mvc_bind_column(sql, t, cname);
 
 		if (regular) {

@@ -362,6 +362,7 @@ main(int argc, char *argv[])
 	kv = findConfKey(_mero_db_props, "embedpy3");
 	kv->val = strdup("no");
 	kv = findConfKey(_mero_db_props, "embedc");
+	kv = findConfKey(_mero_db_props, "embedpy_lazy_virt");
 	kv->val = strdup("no");
 	kv = findConfKey(_mero_db_props, "nclients");
 	kv->val = strdup("64");

@@ -1389,7 +1389,7 @@ command_get(int argc, char *argv[])
 		buf = vbuf;
 		/* print header after errors */
 		if (stats == orig)
-			printf("     name          prop     source           value\n");
+			printf("     name          prop              source           value\n");
 
 		while ((p = strtok(buf, ",")) != NULL) {
 			buf = NULL;
@@ -1441,7 +1441,7 @@ command_get(int argc, char *argv[])
 				}
 			}
 
-			printf("%-15s  %-8s  %-7s  %s\n",
+			printf("%-15s  %-17s  %-7s  %s\n",
 					stats->dbname, p, source, value);
 		}
 

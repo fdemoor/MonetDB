@@ -1526,6 +1526,14 @@ BBPexit(void)
 					continue;
 				}
 
+				if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
+					LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
+					b->tvheap = lpb->heap;
+					lpb->free_fcn(lpb->lv);
+					free(lpb);
+					BBPunsetlazyBAT(b);
+				}
+
 				if (b) {
 					if (b->batSharecnt > 0) {
 						skipped = 1;
@@ -2593,8 +2601,10 @@ decref(bat i, int logical, int releaseShare, int lock, const char *func)
 			assert(0);
 		} else {
 			assert(b == NULL || b->theap.parentid == 0 || BBP_refs(b->theap.parentid) > 0);
-			assert(b == NULL || b->tvheap == NULL || b->tvheap->parentid == 0 || BBP_refs(b->tvheap->parentid) > 0);
-			refs = --BBP_refs(i);
+			if (!(BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT)) {
+				assert(b == NULL || b->tvheap == NULL || b->tvheap->parentid == 0 || BBP_refs(b->tvheap->parentid) > 0);
+			}
+				refs = --BBP_refs(i);
 			if (b && refs == 0) {
 				if ((tp = b->theap.parentid) != 0)
 					b->theap.base = (char *) (b->theap.base - BBP_cache(tp)->theap.base);
@@ -2869,6 +2879,14 @@ BBPdestroy(BAT *b)
 		return;
 	}
 
+	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
+		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
+		b->tvheap = lpb->heap;
+		lpb->free_fcn(lpb->lv);
+		free(lpb);
+		BBPunsetlazyBAT(b);
+	}
+
 	if (isVIEW(b)) {	/* a physical view */
 		VIEWdestroy(b);
 	} else {
@@ -2906,6 +2924,14 @@ BBPfree(BAT *b, const char *calledFrom)
 
 	if (BBP_status(bid) & BBPPYTHONBAT) {
 		return GDK_SUCCEED;
+	}
+
+	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
+		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
+		b->tvheap = lpb->heap;
+		lpb->free_fcn(lpb->lv);
+		free(lpb);
+		BBPunsetlazyBAT(b);
 	}
 
 	/* write dirty BATs before being unloaded */
@@ -3926,5 +3952,17 @@ BBPcacheBAT(BAT *b, bat id) {
 	BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
 
 	BATassertProps(b);
+	return 1;
+}
+
+int
+BBPsetlazyBAT(BAT *b) {
+	BBP_status_on(b->batCacheid, BBPPYTHONLAZYBAT, "BBPsetlazyBAT");
+	return 1;
+}
+
+int
+BBPunsetlazyBAT(BAT *b) {
+	BBP_status_off(b->batCacheid, BBPPYTHONLAZYBAT, "BBPsetlazyBAT");
 	return 1;
 }

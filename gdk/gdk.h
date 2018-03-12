@@ -2865,4 +2865,13 @@ gdk_export BAT *BATsample(BAT *b, BUN n);
  */
 #define MAXPARAMS	32
 
+
+/* Struct for lazy virtual tables */
+typedef struct {
+	bool (*conv_fcn)(BAT*, void*, Heap*);
+	bool (*free_fcn)(void*);
+	Heap *heap;
+	void *lv;
+} LazyPyBAT;
+
 #endif /* _GDK_H_ */

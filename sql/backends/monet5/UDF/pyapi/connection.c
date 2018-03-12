@@ -257,7 +257,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			/* Column values should be strings */
 			if (!PyString_Check(value)) {
 				PyErr_Format(PyExc_TypeError, "expected a string as option, but got an object "
-						"of type %s", Py_TYPE(key)->tp_name);
+								"of type %s", Py_TYPE(key)->tp_name);
 				goto cleanandfail0;
 			}
 
@@ -350,11 +350,47 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				PyErr_Format(PyExc_RuntimeError, "could not get BAT", return_msg);
 				goto cleanandfail;
 			}
-			if (PyObject_FillBATFromArray((PyArrayObject *) data, bat_type, mem_size,
-					(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
-				PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
-																			return_msg);
-				goto cleanandfail;
+
+			if (GDKgetenv_istrue("embeddedpy_lazy_virt")) {
+
+				/* Lazy conversion */
+
+				npy_intp *shape;
+				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
+				LazyVirtual *lv = (LazyVirtual *) malloc(sizeof(LazyVirtual));
+
+				lv->data = (PyArrayObject *) data;
+				lv->mask = (PyArrayObject *) mask;
+				lv->bat_type = bat_type;
+				lv->mem_size = mem_size;
+				lv->unicode = unicode;
+
+				lpb->conv_fcn = &PyObject_FillLazyBATFromArray;
+				lpb->free_fcn = &FreeLazyVirtual;
+				lpb->lv = (void *) lv;
+				lpb->heap = b->tvheap;
+
+				b->tvheap = (Heap *) lpb;
+
+				shape = PyArray_SHAPE((PyArrayObject *) data);
+				nrows = shape[0];
+				b->batCount = nrows;
+				b->batCapacity = nrows;
+
+				if (!BBPsetlazyBAT(b)) {
+					free(lv);
+					goto cleanandfail;
+				}
+
+			} else {
+
+				if (PyObject_FillBATFromArray((PyArrayObject *) data, bat_type, mem_size,
+						(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
+					PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
+																				return_msg);
+					goto cleanandfail;
+				}
+
 			}
 
 		} else {

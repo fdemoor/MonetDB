@@ -52,6 +52,7 @@
 #define BBPWAITING      (BBPUNLOADING|BBPLOADING|BBPSAVING|BBPDELETING)
 
 #define BBPPYTHONBAT 4096
+#define BBPPYTHONLAZYBAT 8192
 
 #define BBPTRIM_ALL	(((size_t)1) << (sizeof(size_t)*8 - 2))	/* very large positive size_t */
 
@@ -73,6 +74,8 @@ gdk_export int BBPrename(bat bid, const char *nme);
 gdk_export bat BBPindex(const char *nme);
 gdk_export BAT *BBPdescriptor(bat b);
 gdk_export int BBPcacheBAT(BAT *b, bat id);
+gdk_export int BBPsetlazyBAT(BAT *b);
+gdk_export int BBPunsetlazyBAT(BAT *b);
 
 /* swapping interface */
 gdk_export gdk_return BBPsync(int cnt, bat *subcommit);

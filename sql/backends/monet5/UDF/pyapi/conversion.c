@@ -1212,7 +1212,6 @@ BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type, size_t mem_s
 	b->tkey = 0;
 	b->tsorted = 0;
 	b->trevsorted = 0;
-	b->tnonil = 1;
 
 	GDKfree(b->theap.base);
 	b->theap.base = data;
@@ -1395,4 +1394,30 @@ cleanandfail:
 		GDKfree(utf8_string);
 	}
 	return false;
+}
+
+bool PyObject_FillLazyBATFromArray(BAT *b, void *arg, Heap *heap) {
+	char *return_msg = (char *) malloc (1024 * sizeof(char));
+	LazyVirtual *lv = (LazyVirtual *) arg;
+	b->tvheap = heap;
+	if (!PyObject_FillBATFromArray(lv->data, lv->bat_type, lv->mem_size,
+								   lv->mask, lv->unicode, b, &return_msg)) {
+		free(lv);
+		free(return_msg);
+		return false;
+	}
+	if (!BBPunsetlazyBAT(b)) {
+		free(lv);
+		free(return_msg);
+		return false;
+	}
+	free(lv);
+	free(return_msg);
+	return true;
+}
+
+bool FreeLazyVirtual(void *arg) {
+	LazyVirtual *lv = (LazyVirtual *) arg;
+	free(lv);
+	return true;
 }

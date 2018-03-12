@@ -22,6 +22,13 @@
 #include "sql_gencode.h"
 #include "opt_pipes.h"
 
+#define CHECK_LAZY_PYBAT()                                                    \
+	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {                       \
+		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;                             \
+		lpb->conv_fcn(b, lpb->lv, lpb->heap);                                      \
+		free(lpb);                                                            \
+	}
+
 /* calculate the footprint for optimizer pipe line choices
  * and identify empty columns upfront for just in time optimizers.
  */
@@ -34,6 +41,7 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	case 0:
 		b= store_funcs.bind_col(tr, c, RDONLY);
 		if (b) {
+			CHECK_LAZY_PYBAT();
 			size += getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}
@@ -41,6 +49,7 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	case 1:
 		b = store_funcs.bind_col(tr, c, RD_INS);
 		if (b) {
+			CHECK_LAZY_PYBAT();
 			size+= getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}
@@ -48,11 +57,13 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	case 2:
 		b = store_funcs.bind_col(tr, c, RD_UPD_VAL);
 		if (b) {
+			CHECK_LAZY_PYBAT();
 			size += getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}
 		b = store_funcs.bind_col(tr, c, RD_UPD_ID);
 		if (b) {
+			CHECK_LAZY_PYBAT();
 			size+= getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}

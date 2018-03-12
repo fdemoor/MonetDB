@@ -212,6 +212,7 @@ forkMserver(char *database, sabdb** stats, int force)
 	char *readonly = NULL;
 	char *embeddedr = NULL;
 	char *embeddedpy = NULL;
+	char *embeddedpy_lazy_virt = NULL;
 	char *dbextra = NULL;
 	char *argv[512];	/* for the exec arguments */
 	char property_other[1024];
@@ -476,6 +477,16 @@ forkMserver(char *database, sabdb** stats, int force)
 		}
 		embeddedpy = "embedded_py=3";
 	}
+
+	kv = findConfKey(ckv, "embedpy_lazy_virt");
+	if (kv->val != NULL && strcmp(kv->val, "no") != 0) {
+		if (!embeddedpy) {
+			// requires one python version to be active
+			return newErr("attempting to activate lazy conversion for virtual tables but no embedded python version is active\n");
+		}
+		embeddedpy_lazy_virt = "embeddedpy_lazy_virt=true";
+	}
+
 	kv = findConfKey(ckv, "dbextra");
 	if (kv != NULL && kv->val != NULL) {
 		dbextra = kv->val;
@@ -544,6 +555,9 @@ forkMserver(char *database, sabdb** stats, int force)
 	if (embeddedpy != NULL) {
 		argv[c++] = "--set"; argv[c++] = embeddedpy;
 	}
+	if (embeddedpy_lazy_virt != NULL) {
+			argv[c++] = "--set"; argv[c++] = embeddedpy_lazy_virt;
+		}
 	if (readonly != NULL) {
 		argv[c++] = readonly;
 	}

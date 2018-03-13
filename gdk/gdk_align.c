@@ -152,6 +152,11 @@ VIEWcreate_(oid seq, BAT *b, int slice_view)
 	bn->batCapacity = b->batCapacity;
 	bn->T = b->T;
 
+	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
+		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
+		bn->tvheap = lpb->heap_fcn(lpb->lv);
+	}
+
 	if (tp)
 		BBPshare(tp);
 	if (bn->tvheap) {

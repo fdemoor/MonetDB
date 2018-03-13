@@ -2870,6 +2870,7 @@ gdk_export BAT *BATsample(BAT *b, BUN n);
 typedef struct {
 	bool (*conv_fcn)(BAT*, void*);
 	void (*free_fcn)(BAT*, void*);
+	Heap*(*heap_fcn)(void*);
 	void *lv;
 } LazyPyBAT;
 

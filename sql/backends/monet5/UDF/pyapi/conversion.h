@@ -126,5 +126,7 @@ pyapi_export bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type,
 pyapi_export bool PyObject_FillLazyBATFromArray(BAT *b, void *arg);
 //! Free the LazyVirtual data (useful when a BAT is destroyed before conversion is needed)
 pyapi_export void FreeLazyVirtual(BAT *b, void *arg);
+//! Return the real heap where the lazy conversion is stored instead for a lazy BAT
+pyapi_export Heap *GetHeapLazyVirtual(void *arg);
 
 #endif /* _PYCONVERSION_LIB_ */

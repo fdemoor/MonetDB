@@ -1443,3 +1443,8 @@ void FreeLazyVirtual(BAT *b, void *arg) {
 	b->tvheap = lv->heap;
 	free(lv);
 }
+
+Heap *GetHeapLazyVirtual(void *arg) {
+	LazyVirtual *lv = (LazyVirtual *) arg;
+	return lv->heap;
+}

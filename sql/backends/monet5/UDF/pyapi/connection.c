@@ -371,6 +371,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				/* Set pointers to the functions to call later */
 				lpb->conv_fcn = &PyObject_FillLazyBATFromArray;
 				lpb->free_fcn = &FreeLazyVirtual;
+				lpb->heap_fcn = &GetHeapLazyVirtual;
 				lpb->lv = (void *) lv;
 
 				/* Keep it in the BAT: we use the tvheap field that is kept in the

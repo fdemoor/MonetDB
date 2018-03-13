@@ -1696,8 +1696,7 @@ BBPexit(void)
 
 				if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 					LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
-					b->tvheap = lpb->heap;
-					lpb->free_fcn(lpb->lv);
+					lpb->free_fcn(b, lpb->lv);
 					free(lpb);
 					BBPunsetlazyBAT(b);
 				}
@@ -3013,8 +3012,7 @@ BBPdestroy(BAT *b)
 
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
-		b->tvheap = lpb->heap;
-		lpb->free_fcn(lpb->lv);
+		lpb->free_fcn(b, lpb->lv);
 		free(lpb);
 		BBPunsetlazyBAT(b);
 	}
@@ -3060,8 +3058,7 @@ BBPfree(BAT *b, const char *calledFrom)
 
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
-		b->tvheap = lpb->heap;
-		lpb->free_fcn(lpb->lv);
+		lpb->free_fcn(b, lpb->lv);
 		free(lpb);
 		BBPunsetlazyBAT(b);
 	}
@@ -4001,64 +3998,30 @@ gdk_bbp_reset(void)
 	backup_subdir = 0;
 }
 
-int
-BBPcacheBAT(BAT *b, bat id) {
-
-	int mode;
-	int lock = locked_by ? MT_getpid() != locked_by : 1;
-	bat oldId = b->batCacheid;
-	BAT *oldB;
-
-	/* Clear the old BBP entry, but do not free the BAT */
-	if (BBPcheck(oldId, "BBPcacheBAT")) {
-		int idx = threadmask(MT_getpid());
-		BBPuncacheit(oldId, FALSE);
-		BBP_desc(oldId) = NULL;
-		BBP_status_set(oldId, BBPUNLOADING, "BBPclear");
-		BBP_refs(oldId) = 0;
-		BBP_lrefs(oldId) = 0;
-		if (lock) {
-			MT_lock_set(&GDKcacheLock(idx));
-		}
-		if (BBPtmpcheck(BBP_logical(oldId)) == 0) {
-			MT_lock_set(&GDKnameLock);
-			BBP_delete(oldId);
-			MT_lock_unset(&GDKnameLock);
-		}
-		if (BBP_logical(oldId) != BBP_bak(oldId)) {
-			GDKfree(BBP_logical(oldId));
-		}
-		BBP_status_set(oldId, 0, "BBPcacheBAT");
-		BBP_logical(oldId) = NULL;
-		BBP_next(oldId) = BBP_free(idx);
-		BBP_free(idx) = oldId;
-		if (lock) {
-			MT_lock_unset(&GDKcacheLock(idx));
-		}
-	}
-
-	/* Free the old BAT that was created but keep the BBP entry */
+void
+BBPfreeBATkeepBBP(bat id) {
+	BAT *b;
 	BBPfix(id);
-	oldB = BBPdescriptor(id);
-	if (oldB) {
-		bat tp = oldB->theap.parentid;
-		bat vtp = VIEWvtparent(oldB);
+	b = BBPdescriptor(id);
+	if (b) {
+		bat tp = b->theap.parentid;
+		bat vtp = VIEWvtparent(b);
 
-		if (isVIEW(oldB)) {	/* a physical view */
-			VIEWdestroy(oldB);
+		if (isVIEW(b)) {	/* a physical view */
+			VIEWdestroy(b);
 		} else {
 			/* bats that get destroyed must unfix their atoms */
-			int (*tunfix) (const void *) = BATatoms[oldB->ttype].atomUnfix;
+			int (*tunfix) (const void *) = BATatoms[b->ttype].atomUnfix;
 			BUN p, q;
-			BATiter bi = bat_iterator(oldB);
+			BATiter bi = bat_iterator(b);
 
-			assert(oldB->batSharecnt == 0);
+			assert(b->batSharecnt == 0);
 			if (tunfix) {
-				BATloop(oldB, p, q) {
+				BATloop(b, p, q) {
 					(*tunfix) (BUNtail(bi, p));
 				}
 			}
-			BATdelete(oldB);	/* handles persistent case also (file deletes) */
+			BATdelete(b);	/* handles persistent case also (file deletes) */
 		}
 
 		/* parent released when completely done with child */
@@ -4069,32 +4032,76 @@ BBPcacheBAT(BAT *b, bat id) {
 			GDKunshare(vtp);
 		}
 	}
+}
+
+void BBPkeepBATfreeBBP(bat id) {
+	int lock = locked_by ? MT_getpid() != locked_by : 1;
+	if (BBPcheck(id, "BBPkeepBATfreeBBP")) {
+		int idx = threadmask(MT_getpid());
+		BBPuncacheit(id, FALSE);
+		BBP_desc(id) = NULL;
+		BBP_status_set(id, BBPUNLOADING, "BBPkeepBATfreeBBP");
+		BBP_refs(id) = 0;
+		BBP_lrefs(id) = 0;
+		if (lock) {
+			MT_lock_set(&GDKcacheLock(idx));
+		}
+		if (BBPtmpcheck(BBP_logical(id)) == 0) {
+			MT_lock_set(&GDKnameLock);
+			BBP_delete(id);
+			MT_lock_unset(&GDKnameLock);
+		}
+		if (BBP_logical(id) != BBP_bak(id)) {
+			GDKfree(BBP_logical(id));
+		}
+		BBP_status_set(id, 0, "BBPkeepBATfreeBBP");
+		BBP_logical(id) = NULL;
+		BBP_next(id) = BBP_free(idx);
+		BBP_free(idx) = id;
+		if (lock) {
+			MT_lock_unset(&GDKcacheLock(idx));
+		}
+	}
+}
+
+int
+BBPcacheBAT(BAT *b) {
+	int lock = locked_by ? MT_getpid() != locked_by : 1;
+	if (BBPcacheit(b, lock) != GDK_SUCCEED) {
+			return 0;
+	}
+	return 1;
+}
+
+int
+BBPvirtualBAT(BAT *b, bat id) {
+
+	/* Clear the old BBP entry, but do not free the BAT */
+	BBPkeepBATfreeBBP(b->batCacheid);
+
+	/* Free the old BAT that was created but keep the BBP entry */
+	BBPfreeBATkeepBBP(id);
 
 	/* Cache the BAT */
-
 	b->batCacheid = id;
-	if (BBPcacheit(b, lock) != GDK_SUCCEED) {
-		return 0;
-	}
+	BBPcacheBAT(b);
 
 	/* Set a special mask to know it is not a real BAT and everything disk-related
 	 * should be skipped
 	 */
-	mode = BBP_status(b->batCacheid) | BBPPYTHONBAT;
-	BBP_status_set(b->batCacheid, mode, "BBPcacheBAT");
+	BBP_status_on(id, BBPPYTHONBAT, "BBPcacheBAT");
 
 	BATassertProps(b);
 	return 1;
 }
 
-int
+
+void
 BBPsetlazyBAT(BAT *b) {
 	BBP_status_on(b->batCacheid, BBPPYTHONLAZYBAT, "BBPsetlazyBAT");
-	return 1;
 }
 
-int
+void
 BBPunsetlazyBAT(BAT *b) {
 	BBP_status_off(b->batCacheid, BBPPYTHONLAZYBAT, "BBPsetlazyBAT");
-	return 1;
 }

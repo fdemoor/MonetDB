@@ -354,36 +354,41 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 			if (GDKgetenv_istrue("embeddedpy_lazy_virt")) {
 
-				/* Lazy conversion */
+				/* Lazy register: conversion price will be paid later, when needed */
 
-				npy_intp *shape;
+				npy_intp *shape = PyArray_SHAPE((PyArrayObject *) data);
 				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
 				LazyVirtual *lv = (LazyVirtual *) malloc(sizeof(LazyVirtual));
 
+				/* Keep all necessary information */
 				lv->data = (PyArrayObject *) data;
 				lv->mask = (PyArrayObject *) mask;
 				lv->bat_type = bat_type;
 				lv->mem_size = mem_size;
 				lv->unicode = unicode;
+				lv->heap = b->tvheap;
 
+				/* Set pointers to the functions to call later */
 				lpb->conv_fcn = &PyObject_FillLazyBATFromArray;
 				lpb->free_fcn = &FreeLazyVirtual;
 				lpb->lv = (void *) lv;
-				lpb->heap = b->tvheap;
 
+				/* Keep it in the BAT: we use the tvheap field that is kept in the
+				 * structure to be restored later
+				 */
 				b->tvheap = (Heap *) lpb;
 
-				shape = PyArray_SHAPE((PyArrayObject *) data);
+				/* Make the system believes the BAT is not empty */
 				nrows = shape[0];
 				b->batCount = nrows;
 				b->batCapacity = nrows;
 
-				if (!BBPsetlazyBAT(b)) {
-					free(lv);
-					goto cleanandfail;
-				}
+				/* Set a special flag to indicate this is a lazy Python BAT */
+				BBPsetlazyBAT(b);
 
 			} else {
+
+				/* Fill immediately, conversion price is paid right now */
 
 				if (PyObject_FillBATFromArray((PyArrayObject *) data, bat_type, mem_size,
 						(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
@@ -408,7 +413,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			id = ((sql_delta *) col->data)->ibid;
 			((sql_delta *) col->data)->cnt = b->batCount;
 
-			if (!BBPcacheBAT(b, id)) {
+			if (!BBPvirtualBAT(b, id)) {
 				PyErr_Format(PyExc_RuntimeError, "could not cache BAT");
 				goto cleanandfail;
 			}

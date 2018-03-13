@@ -2868,9 +2868,8 @@ gdk_export BAT *BATsample(BAT *b, BUN n);
 
 /* Struct for lazy virtual tables */
 typedef struct {
-	bool (*conv_fcn)(BAT*, void*, Heap*);
-	bool (*free_fcn)(void*);
-	Heap *heap;
+	bool (*conv_fcn)(BAT*, void*);
+	void (*free_fcn)(BAT*, void*);
 	void *lv;
 } LazyPyBAT;
 

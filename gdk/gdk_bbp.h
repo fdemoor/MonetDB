@@ -73,9 +73,14 @@ gdk_export int BBPrename(bat bid, const char *nme);
 /* query interface */
 gdk_export bat BBPindex(const char *nme);
 gdk_export BAT *BBPdescriptor(bat b);
-gdk_export int BBPcacheBAT(BAT *b, bat id);
-gdk_export int BBPsetlazyBAT(BAT *b);
-gdk_export int BBPunsetlazyBAT(BAT *b);
+
+/* python virtual table */
+gdk_export void BBPfreeBATkeepBBP(bat id);
+gdk_export void BBPkeepBATfreeBBP(bat id);
+gdk_export int BBPvirtualBAT(BAT *b, bat id);
+gdk_export int BBPcacheBAT(BAT *b);
+gdk_export void BBPsetlazyBAT(BAT *b);
+gdk_export void BBPunsetlazyBAT(BAT *b);
 
 /* swapping interface */
 gdk_export gdk_return BBPsync(int cnt, bat *subcommit);

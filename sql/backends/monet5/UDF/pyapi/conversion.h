@@ -45,8 +45,7 @@ typedef struct {
 	int bat_type;
 	size_t mem_size;
 	int unicode;
-	Heap *old_heap;
-	bool (*fillfcn)(BAT*);
+	Heap *heap;
 } LazyVirtual;
 
 //! Create a Numpy Array Object from a PyInput structure containing a BAT
@@ -124,8 +123,8 @@ pyapi_export bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type,
 											int mem_size, PyArrayObject *mask,
 											int unicode, BAT *b, char **return_msg);
 //! Perform the actual conversion for a lazy BAT
-pyapi_export bool PyObject_FillLazyBATFromArray(BAT *b, void *arg, Heap *heap);
+pyapi_export bool PyObject_FillLazyBATFromArray(BAT *b, void *arg);
 //! Free the LazyVirtual data (useful when a BAT is destroyed before conversion is needed)
-pyapi_export bool FreeLazyVirtual(void *arg);
+pyapi_export void FreeLazyVirtual(BAT *b, void *arg);
 
 #endif /* _PYCONVERSION_LIB_ */

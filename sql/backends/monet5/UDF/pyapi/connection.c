@@ -365,18 +365,18 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				lv->bat_type = bat_type;
 				lv->mem_size = mem_size;
 				lv->unicode = unicode;
-				lv->heap = b->tvheap;
+				lv->backup = b->thash;
 
 				/* Set pointers to the functions to call later */
 				lpb->conv_fcn = &PyObject_FillLazyBATFromArray;
 				lpb->free_fcn = &FreeLazyVirtual;
-				lpb->heap_fcn = &GetHeapLazyVirtual;
+				lpb->backup_fcn = &GetBackupLazyVirtual;
 				lpb->lv = (void *) lv;
 
-				/* Keep it in the BAT: we use the tvheap field that is kept in the
+				/* Keep it in the BAT: we use the hash field that is kept in the
 				 * structure to be restored later
 				 */
-				b->tvheap = (Heap *) lpb;
+				b->thash = (Hash *) lpb;
 
 				/* Make the system believes the BAT is not empty */
 				nrows = shape[0];
@@ -385,6 +385,17 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 				/* Set a special flag to indicate this is a lazy Python BAT */
 				BBPsetlazyBAT(b);
+
+				{
+					LazyPyBAT *lpb = (LazyPyBAT *) b->thash;                              \
+					if (lpb->conv_fcn(b, lpb->lv) == false) {                             \
+						GDKerror("lazy python BAT: error during conversion, drop the "    \
+								"virtual table and try to register it again");            \
+						lpb->free_fcn(b, lpb->lv);                                        \
+						BBPunsetlazyBAT(b);                                               \
+					}                                                                     \
+					free(lpb);
+				}
 
 			} else {
 

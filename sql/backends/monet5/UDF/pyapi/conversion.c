@@ -1409,22 +1409,28 @@ bool PyObject_FillLazyBATFromArray(BAT *b, void *arg) {
 	BBPkeepBATfreeBBP(bb->batCacheid);
 
 	/* Free the old BAT that was created but keep the BBP entry */
-	b->tvheap = lv->heap;
+	b->thash = lv->backup;
 	BBPfreeBATkeepBBP(id);
 
-	/* Fill the BAT: conversion going on */
-	if (!PyObject_FillBATFromArray(lv->data, lv->bat_type, lv->mem_size,
-								   lv->mask, lv->unicode, bb, &return_msg)) {
-		goto cleanandfail;
-	}
-
-	/* Set some last information and remove the special flag: it is now a basetable */
+	/* Set some information and remove the special flag: it is now a basetable */
 	bb->batCacheid = id;
-	bb->tvheap->parentid = id;
+	if (bb->tvheap) {
+		bb->tvheap->parentid = id;
+	}
 	BBPunsetlazyBAT(bb);
 
 	/* Cache the BAT */
 	if (!BBPcacheBAT(bb)) {
+		goto cleanandfail;
+	}
+
+	if (BBPsave(bb) != GDK_SUCCEED) {
+		goto cleanandfail;
+	}
+
+	/* Fill the BAT: conversion going on */
+	if (!PyObject_FillBATFromArray(lv->data, lv->bat_type, lv->mem_size,
+								   lv->mask, lv->unicode, bb, &return_msg)) {
 		goto cleanandfail;
 	}
 
@@ -1440,11 +1446,11 @@ cleanandfail:
 
 void FreeLazyVirtual(BAT *b, void *arg) {
 	LazyVirtual *lv = (LazyVirtual *) arg;
-	b->tvheap = lv->heap;
+	b->thash = lv->backup;
 	free(lv);
 }
 
-Heap *GetHeapLazyVirtual(void *arg) {
+Hash *GetBackupLazyVirtual(void *arg) {
 	LazyVirtual *lv = (LazyVirtual *) arg;
-	return lv->heap;
+	return lv->backup;
 }

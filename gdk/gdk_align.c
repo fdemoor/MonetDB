@@ -104,8 +104,8 @@ VIEWcreate(oid seq, BAT *b)
 	bn->T = b->T;
 
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
-		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
-		bn->tvheap = lpb->heap_fcn(lpb->lv);
+		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;
+		bn->thash = lpb->backup_fcn(lpb->lv);
 	}
 
 	if (tp)

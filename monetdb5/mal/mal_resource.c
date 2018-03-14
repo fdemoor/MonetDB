@@ -79,7 +79,7 @@ getMemoryClaim(MalBlkPtr mb, MalStkPtr stk, InstrPtr pci, int i, int flag)
 		total += BATcount(b) * b->twidth;
 		// string heaps can be shared, consider them as space-less views
 		total += heapinfo(b->tvheap, b->batCacheid); 
-		total += hashinfo(b->thash, d->batCacheid); 
+		total += hashinfo(b->thash, b->batCacheid);
 		total += IMPSimprintsize(b);
 		//total = total > (lng)(MEMORY_THRESHOLD ) ? (lng)(MEMORY_THRESHOLD ) : total;
 		BBPunfix(b->batCacheid);

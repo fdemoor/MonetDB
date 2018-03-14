@@ -24,7 +24,7 @@
 
 #define CHECK_LAZY_PYBAT()                                                    \
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {                       \
-		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;                             \
+		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;                              \
 		if (lpb->conv_fcn(b, lpb->lv) == false) {                             \
 			GDKerror("lazy python BAT: error during conversion, drop the "    \
 					"virtual table and try to register it again");            \

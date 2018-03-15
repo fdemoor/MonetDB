@@ -359,10 +359,14 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
 				LazyVirtual *lv = (LazyVirtual *) malloc(sizeof(LazyVirtual));
 
+				/* Copy the BAT as it is now */
+				BAT *bb = COLcopy(b, b->ttype, TRUE, PERSISTENT);
+
 				/* Keep all necessary information */
 				lv->data = (PyArrayObject *) data;
 				lv->mask = (PyArrayObject *) mask;
 				lv->bat_type = bat_type;
+				lv->b = bb;
 				lv->mem_size = mem_size;
 				lv->unicode = unicode;
 				lv->backup = b->thash;
@@ -385,17 +389,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 				/* Set a special flag to indicate this is a lazy Python BAT */
 				BBPsetlazyBAT(b);
-
-				{
-					LazyPyBAT *lpb = (LazyPyBAT *) b->thash;                              \
-					if (lpb->conv_fcn(b, lpb->lv) == false) {                             \
-						GDKerror("lazy python BAT: error during conversion, drop the "    \
-								"virtual table and try to register it again");            \
-						lpb->free_fcn(b, lpb->lv);                                        \
-						BBPunsetlazyBAT(b);                                               \
-					}                                                                     \
-					free(lpb);
-				}
 
 			} else {
 

@@ -46,6 +46,7 @@ typedef struct {
 	size_t mem_size;
 	int unicode;
 	Hash *backup;
+	BAT *b;
 } LazyVirtual;
 
 //! Create a Numpy Array Object from a PyInput structure containing a BAT

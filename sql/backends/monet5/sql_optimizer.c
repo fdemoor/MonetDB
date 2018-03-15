@@ -25,13 +25,14 @@
 #define CHECK_LAZY_PYBAT()                                                    \
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {                       \
 		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;                              \
+		bat bid = b->batCacheid;                                              \
 		if (lpb->conv_fcn(b, lpb->lv) == false) {                             \
 			GDKerror("lazy python BAT: error during conversion, drop the "    \
 					"virtual table and try to register it again");            \
 			lpb->free_fcn(b, lpb->lv);                                        \
-			BBPunsetlazyBAT(b);                                               \
 		}                                                                     \
 		free(lpb);                                                            \
+		b = BBPdescriptor(bid);                                               \
 	}
 
 /* calculate the footprint for optimizer pipe line choices
@@ -44,7 +45,7 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	BAT *b;
 	switch(access){
 	case 0:
-		b= store_funcs.bind_col(tr, c, RDONLY);
+		b = store_funcs.bind_col(tr, c, RDONLY);
 		if (b) {
 			CHECK_LAZY_PYBAT();
 			size += getBatSpace(b);

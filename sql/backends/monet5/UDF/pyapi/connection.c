@@ -121,7 +121,7 @@ Py_END_ALLOW_THREADS;
 		PyErr_Format(PyExc_ValueError,                                        \
 			"trying to apply option %s to a non-string array for column %s",  \
 			#tpe, cname);                                                     \
-		goto cleanandfail;                                                    \
+		goto cleanandfail2;                                                    \
 	}                                                                         \
 	bat_type = TYPE_##tpe;
 
@@ -140,7 +140,7 @@ Py_END_ALLOW_THREADS;
 				"unrecognized option for column %s: %s "                      \
 				"(available options are: date, daytime, timestamp)",          \
 				cname, oname);                                                \
-			goto cleanandfail;                                                \
+			goto cleanandfail2;                                                \
 		}                                                                     \
 	} else {                                                                  \
 		bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));       \
@@ -269,15 +269,15 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	sql->sa = sa_create();
 	if(!sql->sa) {
 		PyErr_Format(PyExc_RuntimeError, "could not create allocator");
-		goto cleanandfail;
+		goto cleanandfail0;
 	}
 	if (!(s = mvc_bind_schema(sql, "sys"))) {
 		PyErr_Format(PyExc_RuntimeError, "could not bind schema");
-		goto cleanandfail;
+		goto cleanandfail1;
 	}
 	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_ABORT, -1))) {
 		PyErr_Format(PyExc_RuntimeError, "could not create table");
-		goto cleanandfail;
+		goto cleanandfail1;
 	}
 	t->base.allocated = 1;
 	t->base.flag = 1;
@@ -294,13 +294,13 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 		if (!tpe) {
 			PyErr_Format(PyExc_Exception, "could not find type for the table");
-			goto cleanandfail;
+			goto cleanandfail2;
 		}
 
 		col = mvc_create_column(sql, t, cname, tpe);
 		if (!col) {
 			PyErr_Format(PyExc_Exception, "could not create column");
-			goto cleanandfail;
+			goto cleanandfail2;
 		}
 
 	}
@@ -308,12 +308,12 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	if (msg != MAL_SUCCEED) {
 		PyErr_Format(PyExc_RuntimeError, "%s", msg);
 		freeException(msg);
-		goto cleanandfail;
+		goto cleanandfail2;
 	}
 	t = mvc_bind_table(sql, s, tname);
 	if (!t) {
 		PyErr_Format(PyExc_RuntimeError, "could not bind table");
-		goto cleanandfail;
+		goto cleanandfail2;
 	}
 	t->access = 1; // Read-only
 	pos = 0;
@@ -348,12 +348,14 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			b = BBPdescriptor(bid);
 			if (!b) {
 				PyErr_Format(PyExc_RuntimeError, "could not get BAT", return_msg);
-				goto cleanandfail;
+				goto cleanandfail2;
 			}
 
 			if (GDKgetenv_istrue("embeddedpy_lazy_virt")) {
 
-				/* Lazy register: conversion price will be paid later, when needed */
+				/* Lazy register: conversion price will be paid later, when needed
+				 * Hook for conversion is in SQLgetColumnSize function
+				 */
 
 				npy_intp *shape = PyArray_SHAPE((PyArrayObject *) data);
 				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
@@ -398,7 +400,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 						(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
 					PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
 																				return_msg);
-					goto cleanandfail;
+					goto cleanandfail2;
 				}
 
 			}
@@ -411,7 +413,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 										   (PyArrayObject *) mask, &return_msg);
 			if (!b) {
 				PyErr_Format(PyExc_RuntimeError, "array->BAT conversion: %s", return_msg);
-				goto cleanandfail;
+				goto cleanandfail2;
 			}
 
 			id = ((sql_delta *) col->data)->ibid;
@@ -419,7 +421,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 			if (!BBPvirtualBAT(b, id)) {
 				PyErr_Format(PyExc_RuntimeError, "could not cache BAT");
-				goto cleanandfail;
+				goto cleanandfail2;
 			}
 		}
 
@@ -431,7 +433,9 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	sql->sa = NULL;
 	return Py_BuildValue("");
 
-cleanandfail:
+cleanandfail2:
+	mvc_drop_table(sql, s, t, DROP_CASCADE);
+cleanandfail1:
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
 cleanandfail0:

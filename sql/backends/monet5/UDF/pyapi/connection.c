@@ -435,7 +435,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	return Py_BuildValue("");
 
 cleanandfail2:
-	mvc_drop_table(sql, s, t, DROP_CASCADE);
+	//mvc_drop_table(sql, s, t, DROP_CASCADE);
 cleanandfail1:
 	sa_destroy(sql->sa);
 	sql->sa = NULL;

@@ -576,9 +576,11 @@ BATfree(BAT *b)
 		return;
 	}
 
-	if (b->ttype)
-		HEAPfree(&b->theap, 0);
-	else
+	if (b->ttype) {
+		if ((BBP_status(b->batCacheid) & BBPPYTHONFORMERBAT) == 0) {
+			HEAPfree(&b->theap, 0);
+		}
+	} else
 		assert(!b->theap.base);
 
 	if (b->tvheap) {

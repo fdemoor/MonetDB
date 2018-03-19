@@ -445,6 +445,56 @@ cleanandfail0:
 
 }
 
+static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *args)
+{
+	sql_schema *s;
+	sql_table *t;
+	sql_column *c;
+	sql_delta *d;
+	BAT *b;
+	mvc *sql;
+	node *cn;
+	char *tname;
+
+	/* Check arguments */
+	if (!PyArg_ParseTuple(args, "s", &tname)) {
+		goto cleanandfail0;
+	}
+
+	/* Process */
+	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	if (!(s = mvc_bind_schema(sql, "sys"))) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind schema");
+		goto cleanandfail0;
+	}
+	t = mvc_bind_table(sql, s, tname);
+	if (!t) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind table");
+		goto cleanandfail0;
+	}
+	for (cn = t->columns.set->h; cn; cn = cn->next) {
+		c = (sql_column *) cn->data;
+		d = c ? (sql_delta *) c->data : NULL;
+		d = !d ? c->po ? (sql_delta*) c->po->data : NULL : NULL;
+		b = d ? BBPdescriptor(d->bid) : NULL;
+		if (!b) {
+			PyErr_Format(PyExc_RuntimeError, "could not bind column");
+			goto cleanandfail0;
+		}
+		if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
+			if (!BBPpersistBAT(b)) {
+				PyErr_Format(PyExc_RuntimeError, "could not persist column");
+				goto cleanandfail0;
+			}
+		}
+	}
+
+	return Py_BuildValue("");
+
+cleanandfail0:
+	return NULL;
+}
+
 static PyMethodDef _connectionObject_methods[] = {
 	{"execute", (PyCFunction)_connection_execute, METH_O,
 	 "execute(query) -> executes a SQL query on the database in the current "
@@ -453,6 +503,10 @@ static PyMethodDef _connectionObject_methods[] = {
 	 "registerTable(dict, name) -> registers a table existing through Python "
 	 "objects to be able to use it in queries, de-register can be done using "
 	 "a 'DROP TABLE name;' statement"},
+	{"persistTable", (PyCFunction)_connection_persistTable, METH_VARARGS,
+	 "persistTable(name) -> transforms a virtual table into a basetable, "
+	 "causing columns to be written to disk if they were not already "
+	 "(i.e. the ones with zero-copy optimization)"},
 	{NULL, NULL, 0, NULL} /* Sentinel */
 };
 

@@ -3973,3 +3973,15 @@ void
 BBPunsetlazyBAT(BAT *b) {
 	BBP_status_off(b->batCacheid, BBPPYTHONLAZYBAT, "BBPsetlazyBAT");
 }
+
+
+int
+BBPpersistBAT(BAT *b) {
+	assert(BBP_status(b->batCacheid) & BBPPYTHONBAT);
+	BBP_status_off(b->batCacheid, BBPPYTHONBAT, "BBPpersistBAT");
+	BBP_status_on(b->batCacheid, BBPPYTHONFORMERBAT, "BBPpersistBAT");
+	if (BBPsave(b) != GDK_SUCCEED) {
+		return 0;
+	}
+	return 1;
+}

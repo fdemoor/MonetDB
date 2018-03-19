@@ -478,7 +478,7 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 		d = !d ? c->po ? (sql_delta*) c->po->data : NULL : NULL;
 		b = d ? BBPdescriptor(d->bid) : NULL;
 		if (!b) {
-			PyErr_Format(PyExc_RuntimeError, "could not bind column");
+			PyErr_Format(PyExc_RuntimeError, "could not bind BAT");
 			goto cleanandfail0;
 		}
 		if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
@@ -486,6 +486,57 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 				PyErr_Format(PyExc_RuntimeError, "could not persist column");
 				goto cleanandfail0;
 			}
+		}
+	}
+
+	return Py_BuildValue("");
+
+cleanandfail0:
+	return NULL;
+}
+
+static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *args)
+{
+	sql_schema *s;
+	sql_table *t;
+	sql_column *c;
+	sql_delta *d;
+	BAT *b;
+	mvc *sql;
+	char *tname, *cname;
+
+	/* Check arguments */
+	if (!PyArg_ParseTuple(args, "ss", &tname, &cname)) {
+		goto cleanandfail0;
+	}
+
+	/* Process */
+	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
+	if (!(s = mvc_bind_schema(sql, "sys"))) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind schema");
+		goto cleanandfail0;
+	}
+	t = mvc_bind_table(sql, s, tname);
+	if (!t) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind table");
+		goto cleanandfail0;
+	}
+	c = mvc_bind_column(sql, t, cname);
+	if (!c) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind column");
+		goto cleanandfail0;
+	}
+	d = (sql_delta *) c->data;
+	d = !d ? c->po ? (sql_delta*) c->po->data : NULL : NULL;
+	b = d ? BBPdescriptor(d->bid) : NULL;
+	if (!b) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind BAT");
+		goto cleanandfail0;
+	}
+	if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
+		if (!BBPpersistBAT(b)) {
+			PyErr_Format(PyExc_RuntimeError, "could not persist column");
+			goto cleanandfail0;
 		}
 	}
 
@@ -507,6 +558,8 @@ static PyMethodDef _connectionObject_methods[] = {
 	 "persistTable(name) -> transforms a virtual table into a basetable, "
 	 "causing columns to be written to disk if they were not already "
 	 "(i.e. the ones with zero-copy optimization)"},
+	{"persistColumn", (PyCFunction)_connection_persistColumn, METH_VARARGS,
+	 "persistColumn(table, name) -> writes a column from a virtual table on disk, "},
 	{NULL, NULL, 0, NULL} /* Sentinel */
 };
 

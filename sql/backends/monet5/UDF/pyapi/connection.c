@@ -446,8 +446,35 @@ cleanandfail0:
 
 }
 
+#define PERSIST_COLUMN()                                                      \
+	d = c ? (sql_delta *) c->data : NULL;                                     \
+	d = !d ? c->po ? (sql_delta*) c->po->data : NULL : d;                     \
+	b = d ? BBPdescriptor(d->bid) : NULL;                                     \
+	if (!b) {                                                                 \
+		PyErr_Format(PyExc_RuntimeError, "could not bind BAT");               \
+		goto cleanandfail0;                                                   \
+	}                                                                         \
+	if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {                           \
+		if (!BBPpersistBAT(b, reload)) {                                      \
+			PyErr_Format(PyExc_RuntimeError, "could not persist column");     \
+			goto cleanandfail0;                                               \
+		}                                                                     \
+	} else {                                                                  \
+		if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {                   \
+			LazyPyBAT *lpb = (LazyPyBAT *) b->thash;                          \
+			if (lpb->conv_fcn(b, lpb->lv) == false) {                         \
+				PyErr_Format(PyExc_RuntimeError,                              \
+					"error during conversion of lazy BAT");                   \
+				goto cleanandfail0;                                           \
+			} else {                                                          \
+				free(lpb);                                                    \
+			}                                                                 \
+		}                                                                     \
+	}
+
 static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *args)
 {
+	int reload = 0;
 	sql_schema *s;
 	sql_table *t;
 	sql_column *c;
@@ -458,7 +485,7 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 	char *tname;
 
 	/* Check arguments */
-	if (!PyArg_ParseTuple(args, "s", &tname)) {
+	if (!PyArg_ParseTuple(args, "s|i", &tname, &reload)) {
 		goto cleanandfail0;
 	}
 
@@ -475,19 +502,7 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 	}
 	for (cn = t->columns.set->h; cn; cn = cn->next) {
 		c = (sql_column *) cn->data;
-		d = c ? (sql_delta *) c->data : NULL;
-		d = !d ? c->po ? (sql_delta*) c->po->data : NULL : NULL;
-		b = d ? BBPdescriptor(d->bid) : NULL;
-		if (!b) {
-			PyErr_Format(PyExc_RuntimeError, "could not bind BAT");
-			goto cleanandfail0;
-		}
-		if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
-			if (!BBPpersistBAT(b)) {
-				PyErr_Format(PyExc_RuntimeError, "could not persist column");
-				goto cleanandfail0;
-			}
-		}
+		PERSIST_COLUMN();
 	}
 
 	return Py_BuildValue("");
@@ -498,6 +513,7 @@ cleanandfail0:
 
 static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *args)
 {
+	int reload = 0;
 	sql_schema *s;
 	sql_table *t;
 	sql_column *c;
@@ -507,7 +523,7 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 	char *tname, *cname;
 
 	/* Check arguments */
-	if (!PyArg_ParseTuple(args, "ss", &tname, &cname)) {
+	if (!PyArg_ParseTuple(args, "ss|i", &tname, &cname, &reload)) {
 		goto cleanandfail0;
 	}
 
@@ -527,19 +543,7 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 		PyErr_Format(PyExc_RuntimeError, "could not bind column");
 		goto cleanandfail0;
 	}
-	d = (sql_delta *) c->data;
-	d = !d ? c->po ? (sql_delta*) c->po->data : NULL : NULL;
-	b = d ? BBPdescriptor(d->bid) : NULL;
-	if (!b) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind BAT");
-		goto cleanandfail0;
-	}
-	if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
-		if (!BBPpersistBAT(b)) {
-			PyErr_Format(PyExc_RuntimeError, "could not persist column");
-			goto cleanandfail0;
-		}
-	}
+	PERSIST_COLUMN();
 
 	return Py_BuildValue("");
 

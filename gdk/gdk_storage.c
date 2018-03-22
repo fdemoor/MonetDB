@@ -881,6 +881,10 @@ BATdelete(BAT *b)
 		b->batCopiedtodisk = FALSE;
 		return;
 	}
+	if (BBP_status(bid) & BBPPYTHONFORMERBAT) {
+		b->batCopiedtodisk = FALSE;
+		return;
+	}
 
 	if (b->batCopiedtodisk || (b->theap.storage != STORE_MEM)) {
 		if (b->ttype != TYPE_void &&

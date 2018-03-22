@@ -79,7 +79,7 @@ gdk_export BAT *BBPdescriptor(bat b);
 gdk_export void BBPfreeBATkeepBBP(bat id);
 gdk_export void BBPkeepBATfreeBBP(bat id);
 gdk_export int BBPvirtualBAT(BAT *b, bat id);
-gdk_export int BBPpersistBAT(BAT *b);
+gdk_export int BBPpersistBAT(BAT *b, int reload);
 gdk_export int BBPcacheBAT(BAT *b);
 gdk_export void BBPsetlazyBAT(BAT *b);
 gdk_export void BBPunsetlazyBAT(BAT *b);

@@ -29,9 +29,9 @@
 		if (lpb->conv_fcn(b, lpb->lv) == false) {                             \
 			GDKerror("lazy python BAT: error during conversion, drop the "    \
 					"virtual table and try to register it again");            \
-			lpb->free_fcn(b, lpb->lv);                                        \
+		} else {                                                              \
+			free(lpb);                                                        \
 		}                                                                     \
-		free(lpb);                                                            \
 		b = BBPdescriptor(bid);                                               \
 	}
 

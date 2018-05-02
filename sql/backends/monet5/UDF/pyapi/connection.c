@@ -154,7 +154,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	PyObject *key, *value, *mask, *data, *opt;
 	Py_ssize_t pos = 0;
 	npy_intp *shape;
-	char *tname, *cname, *oname;
+	char *tname, *sname, *cname, *oname;
 	char *return_msg = (char *) malloc (1024 * sizeof(char));
 	int bat_type, ndims, nrows = -1, i, nptype;
 	str msg;
@@ -175,7 +175,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		goto cleanandfail0;
 	}
 
-	if (!PyArg_ParseTuple(args, "Os|O", &dict, &tname, &options)) {
+	if (!PyArg_ParseTuple(args, "Oss|O", &dict, &tname, &sname, &options)) {
 		goto cleanandfail0;
 	}
 	LOWER_NAME(tname);
@@ -272,12 +272,12 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		PyErr_Format(PyExc_RuntimeError, "could not create allocator");
 		goto cleanandfail0;
 	}
-	if (!(s = mvc_bind_schema(sql, "sys"))) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind schema");
+	if (!(s = mvc_bind_schema(sql, sname))) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind schema %s", sname);
 		goto cleanandfail1;
 	}
 	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_ABORT, -1))) {
-		PyErr_Format(PyExc_RuntimeError, "could not create table");
+		PyErr_Format(PyExc_RuntimeError, "could not create table %s", tname);
 		goto cleanandfail1;
 	}
 	t->base.allocated = 1;
@@ -300,12 +300,12 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 		col = mvc_create_column(sql, t, cname, tpe);
 		if (!col) {
-			PyErr_Format(PyExc_Exception, "could not create column");
+			PyErr_Format(PyExc_Exception, "could not create column %s", cname);
 			goto cleanandfail2;
 		}
 
 	}
-	msg = create_table_or_view(sql, "sys", t->base.name, t, 0);
+	msg = create_table_or_view(sql, sname, t->base.name, t, 0);
 	if (msg != MAL_SUCCEED) {
 		PyErr_Format(PyExc_RuntimeError, "%s", msg);
 		freeException(msg);
@@ -313,7 +313,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	}
 	t = mvc_bind_table(sql, s, tname);
 	if (!t) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind table");
+		PyErr_Format(PyExc_RuntimeError, "could not bind table %s", tname);
 		goto cleanandfail2;
 	}
 	t->access = 1; // Read-only
@@ -482,22 +482,22 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 	BAT *b;
 	mvc *sql;
 	node *cn;
-	char *tname;
+	char *tname, *sname;
 
 	/* Check arguments */
-	if (!PyArg_ParseTuple(args, "s|i", &tname, &reload)) {
+	if (!PyArg_ParseTuple(args, "ss|i", &tname, &sname, &reload)) {
 		goto cleanandfail0;
 	}
 
 	/* Process */
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
-	if (!(s = mvc_bind_schema(sql, "sys"))) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind schema");
+	if (!(s = mvc_bind_schema(sql, sname))) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind schema %s", sname);
 		goto cleanandfail0;
 	}
 	t = mvc_bind_table(sql, s, tname);
 	if (!t) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind table");
+		PyErr_Format(PyExc_RuntimeError, "could not bind table %s", tname);
 		goto cleanandfail0;
 	}
 	for (cn = t->columns.set->h; cn; cn = cn->next) {
@@ -520,27 +520,27 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 	sql_delta *d;
 	BAT *b;
 	mvc *sql;
-	char *tname, *cname;
+	char *tname, *sname, *cname;
 
 	/* Check arguments */
-	if (!PyArg_ParseTuple(args, "ss|i", &tname, &cname, &reload)) {
+	if (!PyArg_ParseTuple(args, "sss|i", &tname, &sname, &cname, &reload)) {
 		goto cleanandfail0;
 	}
 
 	/* Process */
 	sql = ((backend *) self->cntxt->sqlcontext)->mvc;
-	if (!(s = mvc_bind_schema(sql, "sys"))) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind schema");
+	if (!(s = mvc_bind_schema(sql, sname))) {
+		PyErr_Format(PyExc_RuntimeError, "could not bind schema %s", sname);
 		goto cleanandfail0;
 	}
 	t = mvc_bind_table(sql, s, tname);
 	if (!t) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind table");
+		PyErr_Format(PyExc_RuntimeError, "could not bind table %s", tname);
 		goto cleanandfail0;
 	}
 	c = mvc_bind_column(sql, t, cname);
 	if (!c) {
-		PyErr_Format(PyExc_RuntimeError, "could not bind column");
+		PyErr_Format(PyExc_RuntimeError, "could not bind column %s", cname);
 		goto cleanandfail0;
 	}
 	PERSIST_COLUMN();

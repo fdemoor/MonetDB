@@ -348,7 +348,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			BBPfix(bid);
 			b = BBPdescriptor(bid);
 			if (!b) {
-				PyErr_Format(PyExc_RuntimeError, "could not get BAT", return_msg);
+				PyErr_Format(PyExc_RuntimeError, "could not get BAT: %s", return_msg);
 				goto cleanandfail2;
 			}
 

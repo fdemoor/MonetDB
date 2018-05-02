@@ -1329,7 +1329,7 @@ cleanandfail:
 
 bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type, int mem_size,
 							   PyArrayObject *mask, int unicode,
-							   BAT *b, char **return_msg) {
+							   BAT *b, int obj, char **return_msg) {
 
 	int nrows, i;
 	npy_intp *shape;
@@ -1353,36 +1353,69 @@ bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type, int mem_size,
 
 	BAThrestricted(b) = 0;
 
-	for (i = 0; i < nrows; i++) {
+	if (!obj) { // Array contains directly strings
+		for (i = 0; i < nrows; i++) {
 
-		if (unicode) {
+			if (unicode) {
 
-			if (maskData != NULL && maskData[i] == TRUE) {
-				b->tnil = 1;
-				CONVERT_AND_APPEND_NIL();
-			} else {
-				utf32_to_utf8(0, mem_size / 4, utf8_string,
-					(const Py_UNICODE *)(&data[i * mem_size]));
-				CONVERT_AND_APPEND();
-			}
-
-		} else {
-
-			if (maskData != NULL && maskData[i] == TRUE) {
-				b->tnil = 1;
-				CONVERT_AND_APPEND_NIL();
-			} else {
-				if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
-					sprintf(*return_msg, "invalid string encoding used: "
-						"expecting a regular ASCII string, or a Numpy_Unicode object");
-					goto cleanandfail;
+				if (maskData != NULL && maskData[i] == TRUE) {
+					b->tnil = 1;
+					CONVERT_AND_APPEND_NIL();
+				} else {
+					utf32_to_utf8(0, mem_size / 4, utf8_string,
+						(const Py_UNICODE *) &data[i * mem_size]);
+					CONVERT_AND_APPEND();
 				}
-				CONVERT_AND_APPEND();
+
+			} else {
+
+				if (maskData != NULL && maskData[i] == TRUE) {
+					b->tnil = 1;
+					CONVERT_AND_APPEND_NIL();
+				} else {
+					if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
+						sprintf(*return_msg, "invalid string encoding used: "
+							"expecting a regular ASCII string, or a Numpy_Unicode object");
+						goto cleanandfail;
+					}
+					CONVERT_AND_APPEND();
+				}
+
 			}
 
 		}
+	} else { // Array contains objects
+		size_t utf8_size = utf8string_minlength;
+		for (i = 0; i < nrows; i++) {
+			size_t size = utf8string_minlength;
+			PyObject *object;
+			if (maskData != NULL && maskData[i] == TRUE) {
+				continue;
+			}
+			object = *((PyObject **)&data[i * mem_size]);
+			size = pyobject_get_size(object);
+			if (size > utf8_size) { utf8_size = size; }
+		}
+		utf8_string = GDKzalloc(utf8_size);
+		if (utf8_string == NULL) {
+			sprintf(*return_msg, "could not allocate utf8 string");
+			goto cleanandfail;
+		}
+		for (i = 0; i < nrows; i++) {
+			if (maskData != NULL && maskData[i] == TRUE) {
+				b->tnil = 1;
+				CONVERT_AND_APPEND_NIL();
+			} else {
+				/* we try to handle as many types as possible */
+				pyobject_to_str(
+					((PyObject **)&data[i * mem_size]),
+					utf8_size, &utf8_string);
+				CONVERT_AND_APPEND();
+			}
+		}
 
 	}
+
 
 	if (utf8_string) {
 		GDKfree(utf8_string);
@@ -1428,7 +1461,7 @@ bool PyObject_FillLazyBATFromArray(BAT *b, void *arg) {
 
 	/* Fill the BAT: conversion going on */
 	if (!PyObject_FillBATFromArray(lv->data, lv->bat_type, lv->mem_size,
-								   lv->mask, lv->unicode, lv->b, &return_msg)) {
+								   lv->mask, lv->unicode, lv->b, lv->obj, &return_msg)) {
 		goto cleanandfail;
 	}
 

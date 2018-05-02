@@ -141,10 +141,16 @@ Py_END_ALLOW_THREADS;
 				"unrecognized option for column %s: %s "                      \
 				"(available options are: date, daytime, timestamp)",          \
 				cname, oname);                                                \
-			goto cleanandfail2;                                                \
+			goto cleanandfail2;                                               \
 		}                                                                     \
 	} else {                                                                  \
-		bat_type = PyType_ToBat(PyArray_TYPE((PyArrayObject *) value));       \
+		int type = PyArray_TYPE((PyArrayObject *) value);                     \
+		if (PyType_IsObject(type)) {                                          \
+			bat_type = TYPE_str;                                              \
+			obj = 1;                                                          \
+		} else {                                                              \
+			bat_type = PyType_ToBat(type);                                    \
+		}                                                                     \
 	}
 
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
@@ -233,7 +239,8 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 		nptype = PyArray_TYPE((PyArrayObject *) value);
 		if (!PyType_IsInteger(nptype) && !PyType_IsFloat(nptype)
-					&& !PyType_IsDouble(nptype) && !PyType_IsString(nptype)) {
+					&& !PyType_IsDouble(nptype) && !PyType_IsString(nptype)
+					&& !PyType_IsObject(nptype)) {
 			PyErr_Format(PyExc_TypeError, "array values type: unsupported Numpy type: %s", PyType_Format(nptype));
 			goto cleanandfail0;
 		}
@@ -285,7 +292,8 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
-		int regular;
+		int regular, obj = 0;
+		(void) obj;
 		nptype = PyArray_TYPE((PyArrayObject *) value);
 		regular = (PyType_IsString(nptype) == true);
 		cname = PyString_AsString(key);
@@ -320,12 +328,13 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	pos = 0;
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
-		int regular;
+		int regular, obj = 0;
 		nptype = PyArray_TYPE((PyArrayObject *) value);
 		regular = (PyType_IsString(nptype) == true);
 		cname = PyString_AsString(key);
 		LOWER_NAME(cname);
 		ASSIGN_BAT_TYPE()
+		regular = regular || obj;
 		mem_size = PyArray_DESCR((PyArrayObject *) value)->elsize;
 
 		if (PyType_IsNumpyMaskedArray(value)) {
@@ -370,6 +379,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				lv->mask = (PyArrayObject *) mask;
 				lv->bat_type = bat_type;
 				lv->b = bb;
+				lv->obj = obj;
 				lv->mem_size = mem_size;
 				lv->unicode = unicode;
 				lv->backup = b->thash;
@@ -398,7 +408,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				/* Fill immediately, conversion price is paid right now */
 
 				if (PyObject_FillBATFromArray((PyArrayObject *) data, bat_type, mem_size,
-						(PyArrayObject *) mask, unicode, b, &return_msg) == false) {
+						(PyArrayObject *) mask, unicode, b, obj, &return_msg) == false) {
 					PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
 																				return_msg);
 					goto cleanandfail2;

@@ -62,6 +62,16 @@ bool PyType_IsString(int type)
 	}
 }
 
+bool PyType_IsObject(int type)
+{
+	switch (type) {
+		case NPY_OBJECT:
+			return true;
+		default:
+			return false;
+	}
+}
+
 char *PyType_Format(int type)
 {
 	switch (type) {

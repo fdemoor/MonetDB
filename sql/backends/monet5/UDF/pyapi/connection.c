@@ -346,6 +346,9 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		}
 
 		col = mvc_bind_column(sql, t, cname);
+		if (mask == NULL) { // No null, set the nullable attribute of the col
+			sql_trans_alter_null(sql->session->tr, col, 0);
+		}
 
 		if (regular) {
 			/* No zero-copy optimization possible, register with a regular

@@ -118,11 +118,11 @@ Py_END_ALLOW_THREADS;
 	}
 
 #define ASSIGN_TYPE(tpe)                                                      \
-	if (!regular) {                                                           \
+	if (!(regular || obj)) {                                                  \
 		PyErr_Format(PyExc_ValueError,                                        \
 			"trying to apply option %s to a non-string array for column %s",  \
 			#tpe, cname);                                                     \
-		goto cleanandfail2;                                                    \
+		goto cleanandfail2;                                                   \
 	}                                                                         \
 	bat_type = TYPE_##tpe;
 
@@ -147,7 +147,6 @@ Py_END_ALLOW_THREADS;
 		int type = PyArray_TYPE((PyArrayObject *) value);                     \
 		if (PyType_IsObject(type)) {                                          \
 			bat_type = TYPE_str;                                              \
-			obj = 1;                                                          \
 		} else {                                                              \
 			bat_type = PyType_ToBat(type);                                    \
 		}                                                                     \
@@ -293,9 +292,9 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	while (PyDict_Next(dict, &pos, &key, &value)) {
 
 		int regular, obj = 0;
-		(void) obj;
 		nptype = PyArray_TYPE((PyArrayObject *) value);
 		regular = (PyType_IsString(nptype) == true);
+		obj = (PyType_IsObject(nptype) == true);
 		cname = PyString_AsString(key);
 		LOWER_NAME(cname);
 		ASSIGN_BAT_TYPE()
@@ -331,10 +330,10 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		int regular, obj = 0;
 		nptype = PyArray_TYPE((PyArrayObject *) value);
 		regular = (PyType_IsString(nptype) == true);
+		obj = (PyType_IsObject(nptype) == true);
 		cname = PyString_AsString(key);
 		LOWER_NAME(cname);
 		ASSIGN_BAT_TYPE()
-		regular = regular || obj;
 		mem_size = PyArray_DESCR((PyArrayObject *) value)->elsize;
 
 		if (PyType_IsNumpyMaskedArray(value)) {
@@ -350,7 +349,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			sql_trans_alter_null(sql->session->tr, col, 0);
 		}
 
-		if (regular) {
+		if (regular || obj) {
 			/* No zero-copy optimization possible, register with a regular
 			 * MonetDB column with data copy
 			 */

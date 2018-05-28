@@ -600,7 +600,7 @@
 #endif
 
 /* Define as const if the declaration of iconv() needs const. */
-#define ICONV_CONST const
+#define ICONV_CONST /* const */
 
 /* Define as SQLLEN * or SQLPOINTER depending on the include file */
 #ifdef _WIN64
@@ -666,7 +666,7 @@
 #define PACKAGE_URL "https://www.monetdb.org/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "11.29.4"
+#define PACKAGE_VERSION "11.29.6"
 
 /* Path separator */
 #define PATH_SEP ';'

@@ -401,6 +401,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				nrows = shape[0];
 				b->batCount = nrows;
 				b->batCapacity = nrows;
+				((sql_delta *) col->data)->cnt = b->batCount;
 
 				/* Set a special flag to indicate this is a lazy Python BAT */
 				BBPsetlazyBAT(b);
@@ -415,6 +416,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 																				return_msg);
 					goto cleanandfail2;
 				}
+				((sql_delta *) col->data)->cnt = b->batCount;
 
 			}
 

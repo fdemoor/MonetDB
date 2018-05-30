@@ -282,7 +282,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		PyErr_Format(PyExc_RuntimeError, "could not bind schema %s", sname);
 		goto cleanandfail1;
 	}
-	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_ABORT, -1))) {
+	if (!(t = mvc_create_table(sql, s, tname, tt_table, 0, SQL_DECLARED_TABLE, CA_COMMIT, -1))) {
 		PyErr_Format(PyExc_RuntimeError, "could not create table %s", tname);
 		goto cleanandfail1;
 	}
@@ -375,6 +375,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 				/* Copy the BAT as it is now */
 				BAT *bb = COLcopy(b, b->ttype, TRUE, PERSISTENT);
+				//strcpy(bb->T.heap.filename, b->T.heap.filename);
 
 				/* Keep all necessary information */
 				lv->data = (PyArrayObject *) data;
@@ -463,8 +464,9 @@ cleanandfail0:
 #define PERSIST_COLUMN()                                                      \
 	d = c ? (sql_delta *) c->data : NULL;                                     \
 	d = !d ? c->po ? (sql_delta*) c->po->data : NULL : d;                     \
-	b = d ? BBPdescriptor(d->bid) : NULL;                                     \
-	if (!b) {                                                                 \
+	bid = d ? d->bid ? d-> bid : d->ibid ? d->ibid : 0 : 0;                   \
+	b = bid ? BBPdescriptor(bid) : NULL;                                      \
+    if (!b) {                                                                 \
 		PyErr_Format(PyExc_RuntimeError, "could not bind BAT");               \
 		goto cleanandfail0;                                                   \
 	}                                                                         \
@@ -497,6 +499,7 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 	mvc *sql;
 	node *cn;
 	char *tname, *sname;
+	bat bid;
 
 	/* Check arguments */
 	if (!PyArg_ParseTuple(args, "ss|i", &tname, &sname, &reload)) {
@@ -535,6 +538,7 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 	BAT *b;
 	mvc *sql;
 	char *tname, *sname, *cname;
+	bat bid;
 
 	/* Check arguments */
 	if (!PyArg_ParseTuple(args, "sss|i", &tname, &sname, &cname, &reload)) {

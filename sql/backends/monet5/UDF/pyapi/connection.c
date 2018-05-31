@@ -559,7 +559,7 @@ cleanandfail0:
 		}                                                                     \
 	}
 
-static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *args)
+static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *args, PyObject *kw)
 {
 	int reload = 0;
 	sql_schema *s;
@@ -570,10 +570,11 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 	mvc *sql;
 	node *cn;
 	char *tname, *sname;
+	char *keywords[] = {"tname", "sname", "reload", NULL};
 	bat bid;
 
 	/* Check arguments */
-	if (!PyArg_ParseTuple(args, "ss|i", &tname, &sname, &reload)) {
+	if (!PyArg_ParseTupleAndKeywords(args, kw, "ss|i", keywords, &tname, &sname, &reload)) {
 		goto cleanandfail0;
 	}
 
@@ -599,7 +600,7 @@ cleanandfail0:
 	return NULL;
 }
 
-static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *args)
+static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *args, PyObject *kw)
 {
 	int reload = 0;
 	sql_schema *s;
@@ -609,10 +610,11 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 	BAT *b;
 	mvc *sql;
 	char *tname, *sname, *cname;
+	char *keywords[] = {"tname", "sname", "cname", "reload", NULL};
 	bat bid;
 
 	/* Check arguments */
-	if (!PyArg_ParseTuple(args, "sss|i", &tname, &sname, &cname, &reload)) {
+	if (!PyArg_ParseTupleAndKeywords(args, kw, "sss|i", keywords, &tname, &sname, &cname, &reload)) {
 		goto cleanandfail0;
 	}
 
@@ -648,11 +650,11 @@ static PyMethodDef _connectionObject_methods[] = {
 	 "registerTable(dict, name) -> registers a table existing through Python "
 	 "objects to be able to use it in queries, de-register can be done using "
 	 "a 'DROP TABLE name;' statement"},
-	{"persistTable", (PyCFunction)_connection_persistTable, METH_VARARGS,
+	{"persistTable", (PyCFunction)_connection_persistTable, METH_VARARGS|METH_KEYWORDS,
 	 "persistTable(name) -> transforms a virtual table into a basetable, "
 	 "causing columns to be written to disk if they were not already "
 	 "(i.e. the ones with zero-copy optimization)"},
-	{"persistColumn", (PyCFunction)_connection_persistColumn, METH_VARARGS,
+	{"persistColumn", (PyCFunction)_connection_persistColumn, METH_VARARGS|METH_KEYWORDS,
 	 "persistColumn(table, name) -> writes a column from a virtual table on disk, "},
 	{NULL, NULL, 0, NULL} /* Sentinel */
 };

@@ -175,13 +175,12 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	/* Check arguments */
 
 	options_default = PyDict_New();
+	cols_default = PyList_New(0);
 	options = NULL;
 	if (!options_default) {
 		PyErr_Format(PyExc_ValueError, "can't create an empty dictionary for default options");
 		goto cleanandfail0;
 	}
-
-	cols_default = PyList_New(0);
 	cols = NULL;
 	if (!cols_default) {
 		PyErr_Format(PyExc_ValueError, "can't create an empty list for default cols_order");

@@ -439,10 +439,20 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 			if (GDKgetenv_istrue("embeddedpy_lazy_virt")) {
 
 				/* Lazy register: conversion price will be paid later, when needed
-				 * Hook for conversion is in SQLgetColumnSize function
+				 * Hook for conversion is in SQLgetSpace function
 				 */
 
 				npy_intp *shape = PyArray_SHAPE((PyArrayObject *) data);
+				nrows = shape[0];
+
+				/* Fill the BAT with empty values for now */
+				if (PyObject_EmptyFillBATFromArray(nrows, bat_type, b, &return_msg) == false) {
+					PyErr_Format(PyExc_RuntimeError, "could not empty fill BAT from array: %s",
+																				return_msg);
+					goto cleanandfail2;
+				}
+				((sql_delta *) col->data)->cnt = b->batCount;
+
 				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
 				LazyVirtual *lv = (LazyVirtual *) malloc(sizeof(LazyVirtual));
 
@@ -465,12 +475,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				 * structure to be restored later
 				 */
 				b->thash = (Hash *) lpb;
-
-				/* Make the system believes the BAT is not empty */
-				nrows = shape[0];
-				b->batCount = nrows;
-				b->batCapacity = nrows;
-				((sql_delta *) col->data)->cnt = b->batCount;
 
 				/* Set a special flag to indicate this is a lazy Python BAT */
 				BBPsetlazyBAT(b);
@@ -546,16 +550,7 @@ cleanandfail0:
 			goto cleanandfail0;                                               \
 		}                                                                     \
 	} else {                                                                  \
-		if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {                   \
-			LazyPyBAT *lpb = (LazyPyBAT *) b->thash;                          \
-			if (lpb->conv_fcn(b, lpb->lv) == false) {                         \
-				PyErr_Format(PyExc_RuntimeError,                              \
-					"error during conversion of lazy BAT");                   \
-				goto cleanandfail0;                                           \
-			} else {                                                          \
-				free(lpb);                                                    \
-			}                                                                 \
-		}                                                                     \
+		checkLazyConversion(sql, c);                                          \
 	}
 
 static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *args, PyObject *kw)

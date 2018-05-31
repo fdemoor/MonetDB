@@ -1696,7 +1696,8 @@ BBPexit(void)
 
 				if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 					LazyPyBAT *lpb = (LazyPyBAT *) b->thash;
-					lpb->free_fcn(b, lpb->lv);
+					b->thash = lpb->backup_fcn(lpb->lv);
+					lpb->free_fcn(lpb->lv);
 					free(lpb);
 					BBPunsetlazyBAT(b);
 				}
@@ -3012,7 +3013,8 @@ BBPdestroy(BAT *b)
 
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;
-		lpb->free_fcn(b, lpb->lv);
+		b->thash = lpb->backup_fcn(lpb->lv);
+		lpb->free_fcn(lpb->lv);
 		free(lpb);
 		BBPunsetlazyBAT(b);
 	}
@@ -3057,8 +3059,9 @@ BBPfree(BAT *b, const char *calledFrom)
 	}
 
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
-		LazyPyBAT *lpb = (LazyPyBAT *) b->tvheap;
-		lpb->free_fcn(b, lpb->lv);
+		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;
+		b->thash = lpb->backup_fcn(lpb->lv);
+		lpb->free_fcn(lpb->lv);
 		free(lpb);
 		BBPunsetlazyBAT(b);
 	}

@@ -16,6 +16,8 @@
 
 #include "pyheader.h"
 
+void checkLazyConversion(mvc *m, sql_column *c);
+
 typedef struct {
 	PyObject *numpy_array; // PyArrayObject* with data (can be NULL, as long as
 						   // array_data is set)
@@ -123,11 +125,14 @@ pyapi_export BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type,
 pyapi_export bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type,
 											int mem_size, PyArrayObject *mask,
 											int unicode, BAT *b, int obj, char **return_msg);
+//! Fill an existing BAT with empty data
+pyapi_export bool PyObject_EmptyFillBATFromArray(int nrows, int bat_type,
+							   	   	   	   	BAT *b, char **return_msg);
 //! Perform the actual conversion for a lazy BAT
-pyapi_export bool PyObject_FillLazyBATFromArray(BAT *b, void *arg);
+pyapi_export bool PyObject_FillLazyBATFromArray(void *trarg, void *carg, void *arg);
 //! Free the LazyVirtual data (useful when a BAT is destroyed before conversion is needed)
-pyapi_export void FreeLazyVirtual(BAT *b, void *arg);
-//! Return the real heap base where the lazy conversion is stored instead for a lazy BAT
+pyapi_export void FreeLazyVirtual(void *arg);
+//! Return the real hash field where the lazy conversion is stored instead for a lazy BAT
 pyapi_export Hash *GetBackupLazyVirtual(void *arg);
 
 #endif /* _PYCONVERSION_LIB_ */

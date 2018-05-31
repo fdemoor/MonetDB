@@ -1429,30 +1429,174 @@ cleanandfail:
 	return false;
 }
 
-bool PyObject_FillLazyBATFromArray(BAT *b, void *arg) {
+bool PyObject_EmptyFillBATFromArray(int nrows, int bat_type,
+							   BAT *b, char **return_msg) {
+
+	int i;
+	BAThrestricted(b) = 0;
+	for (i = 0; i < nrows; i++) {
+		CONVERT_AND_APPEND_NIL();
+	}
+	return true;
+
+cleanandfail:
+	return false;
+}
+
+#define UPDATE_FROM_VALUE(x)                                                  \
+	table_funcs.column_update_value(tr, c, i, (void*) &(x));
+
+#define UPDATE_FROM_POINTER(x)                                                \
+	table_funcs.column_update_value(tr, c, i, (void*) (x));
+
+#define CONVERT_AND_UPDATE_TEMPORAL(tprl)                                     \
+	tprl x;                                                                   \
+	str msg = str_2_##tprl(&x, &utf8_string);                                 \
+	if (msg) {                                                                \
+		sprintf(return_msg, "Failed to convert from string to date: "        \
+ 	 	 	 	 	 	 	 "%s", msg);                                      \
+		goto cleanandfail;                                                    \
+	}                                                                         \
+	UPDATE_FROM_VALUE(x);
+
+#define CONVERT_AND_UPDATE()                                                  \
+	if (bat_type == TYPE_str) {                                               \
+		UPDATE_FROM_POINTER(utf8_string);                                     \
+	} else if (bat_type == TYPE_date) {                                       \
+		CONVERT_AND_UPDATE_TEMPORAL(date);                                    \
+	} else if (bat_type == TYPE_daytime) {                                    \
+		CONVERT_AND_UPDATE_TEMPORAL(daytime);                                 \
+	} else if (bat_type == TYPE_timestamp) {                                  \
+		CONVERT_AND_UPDATE_TEMPORAL(timestamp);                               \
+	} else {                                                                  \
+		sprintf(return_msg, "invalid bat type: %s",                          \
+				BatType_Format(bat_type));                                    \
+		goto cleanandfail;                                                    \
+	}
+
+#define CONVERT_AND_UPDATE_NIL()                                              \
+	if (bat_type == TYPE_str) {                                               \
+		UPDATE_FROM_POINTER(str_nil);                                         \
+	} else if (bat_type == TYPE_date) {                                       \
+		date x = date_nil;                                                    \
+		UPDATE_FROM_VALUE(x);                                                 \
+	} else if (bat_type == TYPE_daytime) {                                    \
+		daytime x = daytime_nil;                                              \
+		UPDATE_FROM_VALUE(x);                                                 \
+	} else if (bat_type == TYPE_timestamp) {                                  \
+		timestamp x = *timestamp_nil;                                         \
+		UPDATE_FROM_VALUE(x);                                                 \
+	} else {                                                                  \
+		sprintf(return_msg, "invalid bat type: %s",                          \
+				BatType_Format(bat_type));                                    \
+		goto cleanandfail;                                                    \
+	}
+
+bool PyObject_FillLazyBATFromArray(void *trarg, void *carg, void *arg) {
 
 	char *return_msg = (char *) malloc (1024 * sizeof(char));
 	LazyVirtual *lv = (LazyVirtual *) arg;
+	sql_trans *tr = (sql_trans *) trarg;
+	sql_column *c = (sql_column *) carg;
 
-	/* Fill the BAT: conversion going on */
-	if (!PyObject_FillBATFromArray(lv->data, lv->bat_type, lv->mem_size,
-								   lv->mask, lv->unicode, b, lv->obj, &return_msg)) {
-		goto cleanandfail;
+	int nrows, i, bat_type = lv->bat_type;
+	npy_intp *shape;
+	bool *maskData = NULL;
+	char *utf8_string, *data;
+
+	utf8_string = GDKzalloc(utf8string_minlength + lv->mem_size + 1);
+	utf8_string[utf8string_minlength + lv->mem_size] = '\0';
+	shape = PyArray_SHAPE(lv->data);
+	nrows = shape[0];
+
+	data = (char *) PyArray_DATA(lv->data);
+	if (data == NULL) {
+		sprintf(return_msg, "could not retrieve data from array");
+		return false;
+	}
+
+	if (lv->mask != NULL) {
+		maskData = (bool *) PyArray_DATA(lv->mask);
+	}
+
+	if (!lv->obj) { // Array contains directly strings
+		for (i = 0; i < nrows; i++) {
+
+			if (lv->unicode) {
+
+				if (maskData != NULL && maskData[i] == TRUE) {
+					CONVERT_AND_UPDATE_NIL();
+				} else {
+					utf32_to_utf8(0, lv->mem_size / 4, utf8_string,
+						(const Py_UNICODE *) &data[i * lv->mem_size]);
+					CONVERT_AND_UPDATE();
+				}
+
+			} else {
+
+				if (maskData != NULL && maskData[i] == TRUE) {
+					CONVERT_AND_UPDATE_NIL();
+				} else {
+					if (!string_copy(&data[i * lv->mem_size], utf8_string, lv->mem_size, false)) {
+						sprintf(return_msg, "invalid string encoding used: "
+							"expecting a regular ASCII string, or a Numpy_Unicode object");
+						goto cleanandfail;
+					}
+					CONVERT_AND_UPDATE();
+				}
+
+			}
+
+		}
+	} else { // Array contains objects
+		size_t utf8_size = utf8string_minlength;
+		for (i = 0; i < nrows; i++) {
+			size_t size = utf8string_minlength;
+			PyObject *object;
+			if (maskData != NULL && maskData[i] == TRUE) {
+				continue;
+			}
+			object = *((PyObject **)&data[i * lv->mem_size]);
+			size = pyobject_get_size(object);
+			if (size > utf8_size) { utf8_size = size; }
+		}
+		utf8_string = GDKzalloc(utf8_size);
+		if (utf8_string == NULL) {
+			sprintf(return_msg, "could not allocate utf8 string");
+			goto cleanandfail;
+		}
+		for (i = 0; i < nrows; i++) {
+			if (maskData != NULL && maskData[i] == TRUE) {
+				CONVERT_AND_UPDATE_NIL();
+			} else {
+				/* we try to handle as many types as possible */
+				pyobject_to_str(
+					((PyObject **)&data[i * lv->mem_size]),
+					utf8_size, &utf8_string);
+				CONVERT_AND_UPDATE();
+			}
+		}
+
 	}
 
 	free(lv);
 	free(return_msg);
+	if (utf8_string) {
+		GDKfree(utf8_string);
+	}
 	return true;
 
 cleanandfail:
 	free(lv);
 	free(return_msg);
+	if (utf8_string) {
+		GDKfree(utf8_string);
+	}
 	return false;
 }
 
-void FreeLazyVirtual(BAT *b, void *arg) {
+void FreeLazyVirtual(void *arg) {
 	LazyVirtual *lv = (LazyVirtual *) arg;
-	b->thash = lv->backup;
 	free(lv);
 }
 

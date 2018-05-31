@@ -152,16 +152,17 @@ Py_END_ALLOW_THREADS;
 		}                                                                     \
 	}
 
-static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args)
+static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args, PyObject *kw)
 {
 
-	PyObject *dict, *options, *options_default;
+	PyObject *dict, *options, *options_default, *cols, *cols_default;
 	PyObject *key, *value, *mask, *data, *opt;
-	Py_ssize_t pos = 0;
+	Py_ssize_t pos = 0, len;
 	npy_intp *shape;
 	char *tname, *sname, *cname, *oname;
 	char *return_msg = (char *) malloc (1024 * sizeof(char));
-	int bat_type, ndims, nrows = -1, i, nptype;
+	char *keywords[] = {"data", "tname", "sname", "cols", "options", NULL};
+	int bat_type, ndims, nrows = -1, i, nptype, cond;
 	str msg;
 	mvc *sql;
 	sql_table *t;
@@ -180,7 +181,14 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		goto cleanandfail0;
 	}
 
-	if (!PyArg_ParseTuple(args, "Oss|O", &dict, &tname, &sname, &options)) {
+	cols_default = PyList_New(0);
+	cols = NULL;
+	if (!cols_default) {
+		PyErr_Format(PyExc_ValueError, "can't create an empty list for default cols_order");
+		goto cleanandfail0;
+	}
+
+	if (!PyArg_ParseTupleAndKeywords(args, kw, "Oss|OO", keywords, &dict, &tname, &sname, &cols, &options)) {
 		goto cleanandfail0;
 	}
 	LOWER_NAME(tname);
@@ -189,9 +197,23 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		options = options_default;
 	}
 
+	if (!cols) {
+		cols = cols_default;
+	}
+
 	if (!PyDict_Check(dict)) {
 		PyErr_Format(PyExc_TypeError, "expected a dictionary, but got an object "
 				"of type %s", Py_TYPE(dict)->tp_name);
+		goto cleanandfail0;
+	}
+	if (!PyDict_Check(options)) {
+		PyErr_Format(PyExc_TypeError, "expected a dictionary, but got an object "
+				"of type %s", Py_TYPE(options)->tp_name);
+		goto cleanandfail0;
+	}
+	if (!PyList_Check(cols)) {
+		PyErr_Format(PyExc_TypeError, "expected a list, but got an object "
+				"of type %s", Py_TYPE(cols)->tp_name);
 		goto cleanandfail0;
 	}
 
@@ -254,19 +276,32 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	pos = 0;
 	while (PyDict_Next(options, &pos, &key, &value)) {
 
-			/* Column names should be strings */
-			if (!PyString_Check(key)) {
-				PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
-								"of type %s", Py_TYPE(key)->tp_name);
-				goto cleanandfail0;
-			}
+		/* Column names should be strings */
+		if (!PyString_Check(key)) {
+			PyErr_Format(PyExc_TypeError, "expected a string as key, but got an object "
+							"of type %s", Py_TYPE(key)->tp_name);
+			goto cleanandfail0;
+		}
 
-			/* Column values should be strings */
-			if (!PyString_Check(value)) {
-				PyErr_Format(PyExc_TypeError, "expected a string as option, but got an object "
-								"of type %s", Py_TYPE(key)->tp_name);
-				goto cleanandfail0;
-			}
+		/* Column values should be strings */
+		if (!PyString_Check(value)) {
+			PyErr_Format(PyExc_TypeError, "expected a string as option, but got an object "
+							"of type %s", Py_TYPE(key)->tp_name);
+			goto cleanandfail0;
+		}
+
+	}
+
+	len = PyList_Size(cols);
+	for (pos = 0; pos < len; pos++) {
+
+		/* Column names should be strings */
+		key = PyList_GET_ITEM(cols, pos);
+		if (!PyString_Check(key)) {
+			PyErr_Format(PyExc_TypeError, "expected a string in list, but got an object "
+							"of type %s", Py_TYPE(key)->tp_name);
+			goto cleanandfail0;
+		}
 
 	}
 
@@ -289,7 +324,26 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	t->base.allocated = 1;
 	t->base.flag = 1;
 	pos = 0;
-	while (PyDict_Next(dict, &pos, &key, &value)) {
+	cond = 1;
+	while (cond) {
+
+		if (len == 0) {
+			cond = PyDict_Next(dict, &pos, &key, &value);
+		} else {
+			if (pos < len) {
+				key = PyList_GET_ITEM(cols, pos);
+				value = PyDict_GetItem(dict, key);
+				if (!value) {
+					PyErr_Format(PyExc_RuntimeError, "got column name %s in cols list but not "
+							"in data dict", PyString_AsString(key));
+					goto cleanandfail1;
+				}
+				pos++;
+			} else {
+				cond = 0;
+			}
+		}
+		if (!cond) { break; }
 
 		int regular, obj = 0;
 		nptype = PyArray_TYPE((PyArrayObject *) value);
@@ -325,7 +379,27 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	}
 	t->access = 1; // Read-only
 	pos = 0;
-	while (PyDict_Next(dict, &pos, &key, &value)) {
+	cond = 1;
+
+	while (cond) {
+
+		if (len == 0) {
+			cond = PyDict_Next(dict, &pos, &key, &value);
+		} else {
+			if (pos < len) {
+				key = PyList_GET_ITEM(cols, pos);
+				value = PyDict_GetItem(dict, key);
+				if (!value) {
+					PyErr_Format(PyExc_RuntimeError, "got column name %s in cols list but not "
+							"in data dict", PyString_AsString(key));
+					goto cleanandfail1;
+				}
+				pos++;
+			} else {
+				cond = 0;
+			}
+		}
+		if (!cond) { break; }
 
 		int regular, obj = 0;
 		nptype = PyArray_TYPE((PyArrayObject *) value);
@@ -373,15 +447,10 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
 				LazyVirtual *lv = (LazyVirtual *) malloc(sizeof(LazyVirtual));
 
-				/* Copy the BAT as it is now */
-				BAT *bb = COLcopy(b, b->ttype, TRUE, PERSISTENT);
-				//strcpy(bb->T.heap.filename, b->T.heap.filename);
-
 				/* Keep all necessary information */
 				lv->data = (PyArrayObject *) data;
 				lv->mask = (PyArrayObject *) mask;
 				lv->bat_type = bat_type;
-				lv->b = bb;
 				lv->obj = obj;
 				lv->mem_size = mem_size;
 				lv->unicode = unicode;
@@ -444,6 +513,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	}
 
 	Py_DECREF(options_default);
+	Py_DECREF(cols_default);
 	free(return_msg);
 	sa_destroy(sql->sa);
 	sql->sa = NULL;
@@ -456,6 +526,7 @@ cleanandfail1:
 	sql->sa = NULL;
 cleanandfail0:
 	Py_XDECREF(options_default);
+	Py_XDECREF(cols_default);
 	free(return_msg);
 	return NULL;
 
@@ -573,7 +644,7 @@ static PyMethodDef _connectionObject_methods[] = {
 	{"execute", (PyCFunction)_connection_execute, METH_O,
 	 "execute(query) -> executes a SQL query on the database in the current "
 	 "client context"},
-	{"registerTable", (PyCFunction)_connection_registerTable, METH_VARARGS,
+	{"registerTable", (PyCFunction)_connection_registerTable, METH_VARARGS|METH_KEYWORDS,
 	 "registerTable(dict, name) -> registers a table existing through Python "
 	 "objects to be able to use it in queries, de-register can be done using "
 	 "a 'DROP TABLE name;' statement"},

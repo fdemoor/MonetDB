@@ -46,7 +46,6 @@ typedef struct {
 	size_t mem_size;
 	int unicode;
 	Hash *backup;
-	BAT *b;
 	int obj;
 } LazyVirtual;
 

@@ -25,13 +25,16 @@
 #define CHECK_LAZY_PYBAT()                                                    \
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {                       \
 		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;                              \
-		bat bid = b->batCacheid;                                              \
+		bat bid = ((sql_delta*) c->data)->ibid;                               \
+		BBPfix(bid); \
+		b = BBPdescriptor(bid); \
 		if (lpb->conv_fcn(b, lpb->lv) == false) {                             \
 			GDKerror("lazy python BAT: error during conversion, drop the "    \
 					"virtual table and try to register it again");            \
 		} else {                                                              \
 			free(lpb);                                                        \
 		}                                                                     \
+		                                                          \
 		b = BBPdescriptor(bid);                                               \
 	}
 
@@ -43,11 +46,12 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 {
 	lng size = 0;
 	BAT *b;
+
 	switch(access){
 	case 0:
 		b = store_funcs.bind_col(tr, c, RDONLY);
 		if (b) {
-			CHECK_LAZY_PYBAT();
+			//CHECK_LAZY_PYBAT();
 			size += getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}
@@ -55,7 +59,7 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	case 1:
 		b = store_funcs.bind_col(tr, c, RD_INS);
 		if (b) {
-			CHECK_LAZY_PYBAT();
+			//CHECK_LAZY_PYBAT();
 			size+= getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}
@@ -63,18 +67,60 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	case 2:
 		b = store_funcs.bind_col(tr, c, RD_UPD_VAL);
 		if (b) {
-			CHECK_LAZY_PYBAT();
+			//CHECK_LAZY_PYBAT();
 			size += getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}
 		b = store_funcs.bind_col(tr, c, RD_UPD_ID);
 		if (b) {
-			CHECK_LAZY_PYBAT();
+			//CHECK_LAZY_PYBAT();
 			size+= getBatSpace(b);
 			BBPunfix(b->batCacheid);
 		}
 	}
 	return size;
+}
+
+
+static sql_column *checkLazyConversion(mvc *m, sql_column *c) {
+	BAT *b = store_funcs.bind_col(m->session->tr, c, RDONLY);
+	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
+		BBP_status_off(b->batCacheid, BBPPYTHONLAZYBAT, "checkLazyConversion");
+		sql_column *col;
+		sql_table *t;
+		sql_subtype *tpe;
+		bat bid;
+		char *name = (char*) malloc (strlen(c->base.name) * sizeof(char));
+		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;
+		t = c->t;
+		tpe = &(c->type);
+		strcpy(name, c->base.name);
+		name[0] = '_';
+
+		mvc_drop_column(m, t, c, DROP_CASCADE);
+		col = mvc_create_column(m, t, name, tpe);
+		if (!col) {
+			GDKerror("lazy python BAT: error (col create) during conversion, drop the "
+								"virtual table and try to register it again");
+		}
+		bid = ((sql_delta *) col->data)->ibid;
+		BBPfix(bid);
+		b = BBPdescriptor(bid);
+		if (!b) {
+			GDKerror("lazy python BAT: error (bat bind) during conversion, drop the "
+								"virtual table and try to register it again");
+		}
+		if (lpb->conv_fcn(b, lpb->lv) == false) {
+			GDKerror("lazy python BAT: error during conversion, drop the "
+								"virtual table and try to register it again");
+		} else {
+			free(lpb);
+		}
+		((sql_delta *) col->data)->cnt = b->batCount;
+		free(name);
+		return col;
+	}
+	return c;
 }
 
 /*
@@ -121,6 +167,7 @@ SQLgetSpace(mvc *m, MalBlkPtr mb, int prepare)
 
 			/* we have to sum the cost of all three components of a BAT */
 			if (c && (!isRemote(c->t) && !isMergeTable(c->t)) && (lasttable == 0 || strcmp(lasttable,tname)==0)) {
+				c = checkLazyConversion(m, c);
 				size = SQLgetColumnSize(tr, c, access);
 				space += size;	// accumulate once per table
 				//lasttable = tname;	 invalidate this attempt

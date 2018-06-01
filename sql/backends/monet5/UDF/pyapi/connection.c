@@ -559,10 +559,7 @@ cleanandfail0:
 }
 
 #define PERSIST_COLUMN()                                                      \
-	d = c ? (sql_delta *) c->data : NULL;                                     \
-	d = !d ? c->po ? (sql_delta*) c->po->data : NULL : d;                     \
-	bid = d ? d->bid ? d-> bid : d->ibid ? d->ibid : 0 : 0;                   \
-	b = bid ? BBPdescriptor(bid) : NULL;                                      \
+	b = store_funcs.bind_col(sql->session->tr, c, RDONLY);                    \
     if (!b) {                                                                 \
 		PyErr_Format(PyExc_RuntimeError, "could not bind BAT");               \
 		goto cleanandfail0;                                                   \
@@ -573,7 +570,7 @@ cleanandfail0:
 			goto cleanandfail0;                                               \
 		}                                                                     \
 	} else {                                                                  \
-		lazyUpdate += checkLazyConversion(sql, c);                                          \
+		checkLazyConversion(sql, c);                                          \
 	}
 
 static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *args, PyObject *kw)
@@ -582,14 +579,11 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 	sql_schema *s;
 	sql_table *t;
 	sql_column *c;
-	sql_delta *d;
 	BAT *b;
 	mvc *sql;
 	node *cn;
 	char *tname, *sname;
 	char *keywords[] = {"tname", "sname", "reload", NULL};
-	bat bid;
-	int lazyUpdate = 0;
 
 	/* Check arguments */
 	if (!PyArg_ParseTupleAndKeywords(args, kw, "ss|i", keywords, &tname, &sname, &reload)) {
@@ -631,13 +625,10 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 	sql_schema *s;
 	sql_table *t;
 	sql_column *c;
-	sql_delta *d;
 	BAT *b;
 	mvc *sql;
 	char *tname, *sname, *cname;
 	char *keywords[] = {"tname", "sname", "cname", "reload", NULL};
-	bat bid;
-	int lazyUpdate = 0;
 
 	/* Check arguments */
 	if (!PyArg_ParseTupleAndKeywords(args, kw, "sss|i", keywords, &tname, &sname, &cname, &reload)) {

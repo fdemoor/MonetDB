@@ -16,7 +16,7 @@
 
 #include "pyheader.h"
 
-void checkLazyConversion(mvc *m, sql_column *c);
+int checkLazyConversion(mvc *m, sql_column *c);
 
 typedef struct {
 	PyObject *numpy_array; // PyArrayObject* with data (can be NULL, as long as

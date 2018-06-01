@@ -438,6 +438,9 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 			if (GDKgetenv_istrue("embeddedpy_lazy_virt")) {
 
+//				clock_t start, end;
+//				double cpu_time_used;
+
 				/* Lazy register: conversion price will be paid later, when needed
 				 * Hook for conversion is in SQLgetSpace function
 				 */
@@ -445,12 +448,22 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				npy_intp *shape = PyArray_SHAPE((PyArrayObject *) data);
 				nrows = shape[0];
 
+//				printf("Empty fill column %s from table %s\n", col->base.name, col->t->base.name);
+//				fflush(stdout);
+
+//				start = clock();
+
 				/* Fill the BAT with empty values for now */
 				if (PyObject_EmptyFillBATFromArray(nrows, bat_type, b, &return_msg) == false) {
 					PyErr_Format(PyExc_RuntimeError, "could not empty fill BAT from array: %s",
 																				return_msg);
 					goto cleanandfail2;
 				}
+//				end = clock();
+//				cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+//				printf("empty fill took %g s\n", cpu_time_used);
+//				fflush(stdout);
+
 				((sql_delta *) col->data)->cnt = b->batCount;
 
 				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
@@ -481,14 +494,24 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 			} else {
 
-				/* Fill immediately, conversion price is paid right now */
+//				clock_t start, end;
+//				double cpu_time_used;
 
+//				start = clock();
+
+				/* Fill immediately, conversion price is paid right now */
 				if (PyObject_FillBATFromArray((PyArrayObject *) data, bat_type, mem_size,
 						(PyArrayObject *) mask, unicode, b, obj, &return_msg) == false) {
 					PyErr_Format(PyExc_RuntimeError, "could not fill BAT from array: %s",
 																				return_msg);
 					goto cleanandfail2;
 				}
+
+//				end = clock();
+//				cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+//				printf("fill took %g s\n", cpu_time_used);
+//				fflush(stdout);
+
 				((sql_delta *) col->data)->cnt = b->batCount;
 
 			}
@@ -550,7 +573,7 @@ cleanandfail0:
 			goto cleanandfail0;                                               \
 		}                                                                     \
 	} else {                                                                  \
-		checkLazyConversion(sql, c);                                          \
+		lazyUpdate += checkLazyConversion(sql, c);                                          \
 	}
 
 static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *args, PyObject *kw)
@@ -566,6 +589,7 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 	char *tname, *sname;
 	char *keywords[] = {"tname", "sname", "reload", NULL};
 	bat bid;
+	int lazyUpdate = 0;
 
 	/* Check arguments */
 	if (!PyArg_ParseTupleAndKeywords(args, kw, "ss|i", keywords, &tname, &sname, &reload)) {
@@ -588,6 +612,15 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 		PERSIST_COLUMN();
 	}
 
+	if (lazyUpdate) {
+		store_lock();
+		sql_trans_commit(sql->session->tr);
+		sql_trans_end(sql->session);
+		store_apply_deltas();
+		sql_trans_begin(sql->session);
+		store_unlock();
+	}
+
 	return Py_BuildValue("");
 
 cleanandfail0:
@@ -606,6 +639,7 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 	char *tname, *sname, *cname;
 	char *keywords[] = {"tname", "sname", "cname", "reload", NULL};
 	bat bid;
+	int lazyUpdate = 0;
 
 	/* Check arguments */
 	if (!PyArg_ParseTupleAndKeywords(args, kw, "sss|i", keywords, &tname, &sname, &cname, &reload)) {
@@ -629,6 +663,15 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 		goto cleanandfail0;
 	}
 	PERSIST_COLUMN();
+
+	if (lazyUpdate) {
+		store_lock();
+		sql_trans_commit(sql->session->tr);
+		sql_trans_end(sql->session);
+		store_apply_deltas();
+		sql_trans_begin(sql->session);
+		store_unlock();
+	}
 
 	return Py_BuildValue("");
 

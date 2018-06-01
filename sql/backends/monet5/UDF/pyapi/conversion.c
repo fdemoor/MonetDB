@@ -1444,10 +1444,16 @@ cleanandfail:
 }
 
 #define UPDATE_FROM_VALUE(x)                                                  \
-	table_funcs.column_update_value(tr, c, i, (void*) &(x));
+	if (BUNinplace(b, i, &(x), TRUE) != GDK_SUCCEED) {                           \
+		sprintf(return_msg, "BUNinplace failed");                             \
+		goto cleanandfail;                                                    \
+	}
 
 #define UPDATE_FROM_POINTER(x)                                                \
-	table_funcs.column_update_value(tr, c, i, (void*) (x));
+	if (BUNinplace(b, i, (x), TRUE) != GDK_SUCCEED) {                            \
+		sprintf(return_msg, "BUNinplace failed");                             \
+		goto cleanandfail;                                                    \
+	}
 
 #define CONVERT_AND_UPDATE_TEMPORAL(tprl)                                     \
 	tprl x;                                                                   \
@@ -1498,6 +1504,12 @@ bool PyObject_FillLazyBATFromArray(void *trarg, void *carg, void *arg) {
 	LazyVirtual *lv = (LazyVirtual *) arg;
 	sql_trans *tr = (sql_trans *) trarg;
 	sql_column *c = (sql_column *) carg;
+	BAT *b;
+
+	b = store_funcs.bind_col(tr, c, RDONLY);
+
+//	printf("Converting lazy column %s from table %s\n", c->base.name, c->t->base.name);
+//	fflush(stdout);
 
 	int nrows, i, bat_type = lv->bat_type;
 	npy_intp *shape;

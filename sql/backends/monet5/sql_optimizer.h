@@ -19,6 +19,6 @@ sql5_export void SQLsetAccessMode(Client c);
 sql5_export str getSQLoptimizer(mvc *m);
 
 /** Checks if this is a lazy column and if so performs the conversion */
-sql5_export void checkLazyConversion(mvc *m, sql_column *c);
+sql5_export int checkLazyConversion(mvc *m, sql_column *c);
 
 #endif /* _SQL_OPTIMIZER_H_ */

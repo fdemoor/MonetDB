@@ -179,14 +179,14 @@ SQLgetSpace(mvc *m, MalBlkPtr mb, int prepare)
 		}
 	}
 
-	if (lazyUpdate) {
-		store_lock();
-		sql_trans_commit(m->session->tr);
-		sql_trans_end(m->session);
-		store_apply_deltas();
-		sql_trans_begin(m->session);
-		store_unlock();
-	}
+//	if (lazyUpdate) {
+//		store_lock();
+//		sql_trans_commit(m->session->tr);
+//		sql_trans_end(m->session);
+//		store_apply_deltas();
+//		sql_trans_begin(m->session);
+//		store_unlock();
+//	}
 
 	return space;
 }

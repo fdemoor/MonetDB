@@ -612,14 +612,12 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 		PERSIST_COLUMN();
 	}
 
-	if (lazyUpdate) {
-		store_lock();
-		sql_trans_commit(sql->session->tr);
-		sql_trans_end(sql->session);
-		store_apply_deltas();
-		sql_trans_begin(sql->session);
-		store_unlock();
-	}
+	store_lock();
+	sql_trans_commit(sql->session->tr);
+	sql_trans_end(sql->session);
+	store_apply_deltas();
+	sql_trans_begin(sql->session);
+	store_unlock();
 
 	return Py_BuildValue("");
 
@@ -664,14 +662,12 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 	}
 	PERSIST_COLUMN();
 
-	if (lazyUpdate) {
-		store_lock();
-		sql_trans_commit(sql->session->tr);
-		sql_trans_end(sql->session);
-		store_apply_deltas();
-		sql_trans_begin(sql->session);
-		store_unlock();
-	}
+	store_lock();
+	sql_trans_commit(sql->session->tr);
+	sql_trans_end(sql->session);
+	store_apply_deltas();
+	sql_trans_begin(sql->session);
+	store_unlock();
 
 	return Py_BuildValue("");
 

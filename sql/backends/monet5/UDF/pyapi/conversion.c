@@ -1429,19 +1429,6 @@ cleanandfail:
 	return false;
 }
 
-bool PyObject_EmptyFillBATFromArray(int nrows, int bat_type,
-							   BAT *b, char **return_msg) {
-
-	int i;
-	BAThrestricted(b) = 0;
-	for (i = 0; i < nrows; i++) {
-		CONVERT_AND_APPEND_NIL();
-	}
-	return true;
-
-cleanandfail:
-	return false;
-}
 
 #define UPDATE_FROM_VALUE(x)                                                  \
 	if (BUNinplace(b, i, &(x), TRUE) != GDK_SUCCEED) {                           \

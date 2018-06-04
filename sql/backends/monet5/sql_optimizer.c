@@ -62,19 +62,23 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	return size;
 }
 
-
+//#define VTABLE_DEBUG
 int checkLazyConversion(mvc *m, sql_column *c) {
 	BAT *b = store_funcs.bind_col(m->session->tr, c, RDONLY);
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 
-//		clock_t start, end;
-//		double cpu_time_used;
+#ifdef VTABLE_DEBUG
+		clock_t start, end;
+		double cpu_time_used;
+#endif
 
 		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;
 		b->thash = lpb->backup_fcn(lpb->lv);
 		BBPunsetlazyBAT(b);
 
-//		start = clock();
+#ifdef VTABLE_DEBUG
+		start = clock();
+#endif
 		if (lpb->conv_fcn((void*) m->session->tr, (void*) c, lpb->lv) == false) {
 			free(lpb);
 			GDKerror("lazy python BAT: error during conversion, drop the "
@@ -82,11 +86,13 @@ int checkLazyConversion(mvc *m, sql_column *c) {
 		} else {
 			free(lpb);
 		}
-//		end = clock();
-//
-//		cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-//		printf("conversion took %g s\n", cpu_time_used);
-//		fflush(stdout);
+#ifdef VTABLE_DEBUG
+		end = clock();
+
+		cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+		printf("conversion took %g s\n", cpu_time_used);
+		fflush(stdout);
+#endif
 
 		return 1;
 	}

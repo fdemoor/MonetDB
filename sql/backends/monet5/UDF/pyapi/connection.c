@@ -152,6 +152,7 @@ Py_END_ALLOW_THREADS;
 		}                                                                     \
 	}
 
+//#define VTABLE_DEBUG
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args, PyObject *kw)
 {
 
@@ -438,9 +439,6 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 			if (GDKgetenv_istrue("embeddedpy_lazy_virt")) {
 
-//				clock_t start, end;
-//				double cpu_time_used;
-
 				/* Lazy register: conversion price will be paid later, when needed
 				 * Hook for conversion is in SQLgetSpace function
 				 */
@@ -448,22 +446,12 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				npy_intp *shape = PyArray_SHAPE((PyArrayObject *) data);
 				nrows = shape[0];
 
-//				printf("Empty fill column %s from table %s\n", col->base.name, col->t->base.name);
-//				fflush(stdout);
-
-//				start = clock();
-
-				/* Fill the BAT with empty values for now */
-				if (PyObject_EmptyFillBATFromArray(nrows, bat_type, b, &return_msg) == false) {
-					PyErr_Format(PyExc_RuntimeError, "could not empty fill BAT from array: %s",
-																				return_msg);
+				b->batCount = nrows;
+				if (BATextend(b, nrows) != GDK_SUCCEED) {
+					PyErr_Format(PyExc_RuntimeError, "could not expand BAT heap");
 					goto cleanandfail2;
 				}
-//				end = clock();
-//				cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-//				printf("empty fill took %g s\n", cpu_time_used);
-//				fflush(stdout);
-
+				b->theap.free = nrows * b->twidth;
 				((sql_delta *) col->data)->cnt = b->batCount;
 
 				LazyPyBAT *lpb = (LazyPyBAT *) malloc(sizeof(LazyPyBAT));
@@ -494,10 +482,14 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 			} else {
 
-//				clock_t start, end;
-//				double cpu_time_used;
+#ifdef VTABLE_DEBUG
+				clock_t start, end;
+				double cpu_time_used;
 
-//				start = clock();
+				printf("Fill column %s from table %s\n", col->base.name, col->t->base.name);
+				fflush(stdout);
+				start = clock();
+#endif
 
 				/* Fill immediately, conversion price is paid right now */
 				if (PyObject_FillBATFromArray((PyArrayObject *) data, bat_type, mem_size,
@@ -507,10 +499,12 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 					goto cleanandfail2;
 				}
 
-//				end = clock();
-//				cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-//				printf("fill took %g s\n", cpu_time_used);
-//				fflush(stdout);
+#ifdef VTABLE_DEBUG
+				end = clock();
+				cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+				printf("fill took %g s\n", cpu_time_used);
+				fflush(stdout);
+#endif
 
 				((sql_delta *) col->data)->cnt = b->batCount;
 

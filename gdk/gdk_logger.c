@@ -700,9 +700,11 @@ la_bat_use(logger *lg, logaction *la)
 	BAT *b = BATdescriptor(bid);
 	BUN p;
 
+	/* VIRTUAL TABLE CODE */
 	if (BBP_status(bid) & BBPPYTHONBAT) {
 		return GDK_SUCCEED;
 	}
+	/* END VIRTUAL TABLE CODE */
 
 	assert(la->nr <= (lng) INT_MAX);
 	if (b == NULL) {
@@ -2904,10 +2906,12 @@ bm_commit(logger *lg)
 		 * the system restarted, so they are not in cache anymore
 		 * -> there is nothing to do, skip it
 		 */
+
+		/* VIRTUAL TABLE CODE */
 		if ((lb == NULL) && (BBP_status(bid) & BBPPYTHONBAT)) {
 			continue;
 		}
-		/* */
+		/* END VIRTUAL TABLE CODE */
 
 		if (lb == NULL ||
 		    BATmode(lb, TRANSIENT) != GDK_SUCCEED) {

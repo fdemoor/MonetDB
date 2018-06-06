@@ -18,7 +18,9 @@
 
 //#define heapinfo(X,Id)	(((X) && (X)->base && ((X)->parentid == 0 || (X)->parentid == Id)) ? (X)->free : 0)
 #define heapinfo(X,Id)	(((X) && (X)->base ) ? (X)->free : 0)
+/* VIRTUAL TABLE CODE */
 #define hashinfo(X,Id) ((X) && ((BBP_status((Id)) & BBPPYTHONLAZYBAT) == 0) && (X) != (Hash *) 1 ? heapinfo(&(X)->heap, Id) : 0)
+/* END VIRTUAL TABLE CODE */
 
 #define USE_MAL_ADMISSION
 #ifdef USE_MAL_ADMISSION

@@ -41,6 +41,8 @@ typedef struct {
 	PyObject *result; // Converted PyObject, probably shouldn't be here
 } PyInput;
 
+/* VIRTUAL TABLE CODE */
+// Struct to store information for lazy string conversion
 typedef struct {
 	PyArrayObject *data;
 	PyArrayObject *mask;
@@ -50,6 +52,7 @@ typedef struct {
 	Hash *backup;
 	int obj;
 } LazyVirtual;
+/* END VIRTUAL TABLE CODE */
 
 //! Create a Numpy Array Object from a PyInput structure containing a BAT
 pyapi_export PyObject *PyArrayObject_FromBAT(PyInput *input_bat, size_t start,
@@ -117,6 +120,7 @@ pyapi_export str ConvertToSQLType(Client cntxt, BAT *b,
 
 str _conversion_init(void);
 
+/* VIRTUAL TABLE CODE */
 //! Create a BAT from an array
 pyapi_export BAT *PyObject_ConvertArrayToBAT(PyArrayObject *array, int bat_type,
 											 size_t mem_size, PyArrayObject *mask,
@@ -131,5 +135,6 @@ pyapi_export bool PyObject_FillLazyBATFromArray(void *trarg, void *carg, void *a
 pyapi_export void FreeLazyVirtual(void *arg);
 //! Return the real hash field where the lazy conversion is stored instead for a lazy BAT
 pyapi_export Hash *GetBackupLazyVirtual(void *arg);
+/* END VIRTUAL TABLE CODE */
 
 #endif /* _PYCONVERSION_LIB_ */

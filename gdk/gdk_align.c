@@ -103,10 +103,14 @@ VIEWcreate(oid seq, BAT *b)
 	bn->batCapacity = b->batCapacity;
 	bn->T = b->T;
 
+	/* VIRTUAL TABLE CODE */
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 		LazyPyBAT *lpb = (LazyPyBAT *) b->thash;
 		bn->thash = lpb->backup_fcn(lpb->lv);
+		lpb->free_fcn(lpb->lv);
+		free(lpb);
 	}
+	/* END VIRTUAL TABLE CODE */
 
 	if (tp)
 		BBPshare(tp);

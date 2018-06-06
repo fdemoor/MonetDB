@@ -1375,11 +1375,12 @@ BBPreadEntries(FILE *fp, unsigned bbpversion)
 		BBP_desc(bid) = bn;
 		BBP_status(bid) = BBPEXISTING;	/* do we need other status bits? */
 
+		/* VIRTUAL TABLE CODE */
 		/* Set again pybat mask if it was set before */
 		if (status & BBPPYTHONBAT) {
 			BBP_status_on(bid, BBPPYTHONBAT, "BBPreadEntries");
 		}
-		/* */
+		/* END VIRTUAL TABLE CODE */
 
 		if ((s = strchr(headname, '~')) != NULL && s == headname) {
 			snprintf(logical, sizeof(logical), "tmp_%o", (unsigned) bid);
@@ -1690,6 +1691,7 @@ BBPexit(void)
 			if (BBPvalid(i)) {
 				BAT *b = BBP_desc(i);
 
+				/* VIRTUAL TABLE CODE */
 				if (BBP_status(i) & BBPPYTHONBAT) {
 					continue;
 				}
@@ -1701,6 +1703,7 @@ BBPexit(void)
 					free(lpb);
 					BBPunsetlazyBAT(b);
 				}
+				/* END VIRTUAL TABLE CODE */
 
 				if (b) {
 					if (b->batSharecnt > 0) {
@@ -1807,8 +1810,10 @@ new_bbpentry(FILE *fp, bat i, const char *prefix)
 		    BUNFMT " " OIDFMT, prefix,
 		    /* BAT info */
 		    (ssize_t) i,
+			/* VIRTUAL TABLE CODE */
 		    BBP_status(i) & (BBPPERSISTENT | BBPPYTHONBAT), /* Python BAT flag must be saved */
-		    BBP_logical(i),
+			/* END VIRTUAL TABLE CODE */
+			BBP_logical(i),
 		    BBP_physical(i),
 		    BBP_desc(i)->batRestricted << 1,
 		    BBP_desc(i)->batCount,
@@ -2733,7 +2738,9 @@ decref(bat i, bool logical, bool releaseShare, bool lock, const char *func)
 			assert(0);
 		} else {
 			assert(b == NULL || b->theap.parentid == 0 || BBP_refs(b->theap.parentid) > 0);
+			/* VIRTUAL TABLE CODE */
 			if (!(BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT)) {
+			/* END VIRTUAL TABLE CODE */
 				assert(b == NULL || b->tvheap == NULL || b->tvheap->parentid == 0 || BBP_refs(b->tvheap->parentid) > 0);
 			}
 				refs = --BBP_refs(i);
@@ -3006,6 +3013,7 @@ BBPdestroy(BAT *b)
 	bat tp = b->theap.parentid;
 	bat vtp = VIEWvtparent(b);
 
+	/* VIRTUAL TABLE CODE */
 	if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
 		b->batCopiedtodisk = FALSE;
 		return;
@@ -3018,6 +3026,7 @@ BBPdestroy(BAT *b)
 		free(lpb);
 		BBPunsetlazyBAT(b);
 	}
+	/* END VIRTUAL TABLE CODE */
 
 	if (isVIEW(b)) {	/* a physical view */
 		VIEWdestroy(b);
@@ -3054,6 +3063,7 @@ BBPfree(BAT *b, const char *calledFrom)
 	assert(BBPswappable(b));
 	(void) calledFrom;
 
+	/* VIRTUAL TABLE CODE */
 	if (BBP_status(bid) & BBPPYTHONBAT) {
 		return GDK_SUCCEED;
 	}
@@ -3065,6 +3075,7 @@ BBPfree(BAT *b, const char *calledFrom)
 		free(lpb);
 		BBPunsetlazyBAT(b);
 	}
+	/* END VIRTUAL TABLE CODE */
 
 	/* write dirty BATs before being unloaded */
 	ret = BBPsave(b);
@@ -3476,9 +3487,11 @@ BBPsync(int cnt, bat *subcommit)
 		while (++idx < cnt) {
 			bat i = subcommit ? subcommit[idx] : idx;
 			BAT *b = dirty_bat(&i, subcommit != NULL);
+			/* VIRTUAL TABLE CODE */
 			if (BBP_status(i) & BBPPYTHONBAT) {
 				continue;
 			}
+			/* END VIRTUAL TABLE CODE */
 			if (i <= 0)
 				break;
 			if (BBP_status(i) & BBPEXISTING) {
@@ -3509,9 +3522,11 @@ BBPsync(int cnt, bat *subcommit)
 
 		while (++idx < cnt) {
 			bat i = subcommit ? subcommit[idx] : idx;
+			/* VIRTUAL TABLE CODE */
 			if (BBP_status(i) & BBPPYTHONBAT) {
 				continue;
 			}
+			/* END VIRTUAL TABLE CODE */
 
 			if (BBP_status(i) & BBPPERSISTENT) {
 				BAT *b = dirty_bat(&i, subcommit != NULL);
@@ -4001,6 +4016,9 @@ gdk_bbp_reset(void)
 	backup_subdir = 0;
 }
 
+
+/* VIRTUAL TABLE CODE */
+
 void
 BBPfreeBATkeepBBP(bat id) {
 	BAT *b;
@@ -4098,28 +4116,34 @@ BBPvirtualBAT(BAT *b, bat id) {
 	return 1;
 }
 
-
+/** Sets a flag to indicate this is a lazy column */
 void
 BBPsetlazyBAT(BAT *b) {
 	BBP_status_on(b->batCacheid, BBPPYTHONLAZYBAT, "BBPsetlazyBAT");
 }
 
+/** Removes the flag that indicates this is a lazy column */
 void
 BBPunsetlazyBAT(BAT *b) {
 	BBP_status_off(b->batCacheid, BBPPYTHONLAZYBAT, "BBPsetlazyBAT");
 }
 
-
+/** Persists a virtual column */
 int
 BBPpersistBAT(BAT *b, int reload) {
 	assert(BBP_status(b->batCacheid) & BBPPYTHONBAT);
+	// Add a new flag, this is still a special BAT until the heap is
+	// reloaded from disk
 	BBP_status_on(b->batCacheid, BBPPYTHONFORMERBAT, "BBPpersistBAT");
 	if (BBPsave(b) != GDK_SUCCEED) {
 		return 0;
 	}
 	if (reload) {
+		// If asked, uncache the BAT, it will be reloaded from disk
 		BBP_cache(b->batCacheid) = NULL;
 	}
 	BBP_status_off(b->batCacheid, BBPPYTHONBAT, "BBPpersistBAT");
 	return 1;
 }
+
+/* END VIRTUAL TABLE CODE */

@@ -51,6 +51,7 @@ bool PyType_IsDouble(int type)
 	}
 }
 
+/* VIRTUAL TABLE CODE */
 bool PyType_IsString(int type)
 {
 	switch (type) {
@@ -71,6 +72,7 @@ bool PyType_IsObject(int type)
 			return false;
 	}
 }
+/* END VIRTUAL TABLE CODE */
 
 char *PyType_Format(int type)
 {

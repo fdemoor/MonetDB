@@ -51,9 +51,11 @@
 #define BBPUNSTABLE	(BBPUNLOADING|BBPDELETING)	/* set while we are unloading */
 #define BBPWAITING      (BBPUNLOADING|BBPLOADING|BBPSAVING|BBPDELETING)
 
+/* VIRTUAL TABLE CODE */
 #define BBPPYTHONBAT 4096
 #define BBPPYTHONLAZYBAT 8192
 #define BBPPYTHONFORMERBAT 16384
+/* END VIRTUAL TABLE CODE */
 
 #define BBPTRIM_ALL	(((size_t)1) << (sizeof(size_t)*8 - 2))	/* very large positive size_t */
 
@@ -75,7 +77,7 @@ gdk_export int BBPrename(bat bid, const char *nme);
 gdk_export bat BBPindex(const char *nme);
 gdk_export BAT *BBPdescriptor(bat b);
 
-/* python virtual table */
+/* VIRTUAL TABLE CODE */
 gdk_export void BBPfreeBATkeepBBP(bat id);
 gdk_export void BBPkeepBATfreeBBP(bat id);
 gdk_export int BBPvirtualBAT(BAT *b, bat id);
@@ -83,6 +85,7 @@ gdk_export int BBPpersistBAT(BAT *b, int reload);
 gdk_export int BBPcacheBAT(BAT *b);
 gdk_export void BBPsetlazyBAT(BAT *b);
 gdk_export void BBPunsetlazyBAT(BAT *b);
+/* END VIRTUAL TABLE CODE */
 
 /* swapping interface */
 gdk_export gdk_return BBPsync(int cnt, bat *subcommit);

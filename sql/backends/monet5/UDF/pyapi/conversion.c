@@ -1173,6 +1173,9 @@ str _conversion_init(void)
 	return msg;
 }
 
+
+/* VIRTUAL TABLE CODE */
+
 #define SET_NULL_VALUE(tpe)                                                   \
 	{                                                                         \
 		(*(tpe *)(&data[i * mem_size])) = tpe##_nil;                          \
@@ -1495,9 +1498,6 @@ bool PyObject_FillLazyBATFromArray(void *trarg, void *carg, void *arg) {
 
 	b = store_funcs.bind_col(tr, c, RDONLY);
 
-//	printf("Converting lazy column %s from table %s\n", c->base.name, c->t->base.name);
-//	fflush(stdout);
-
 	int nrows, i, bat_type = lv->bat_type;
 	npy_intp *shape;
 	bool *maskData = NULL;
@@ -1603,3 +1603,5 @@ Hash *GetBackupLazyVirtual(void *arg) {
 	LazyVirtual *lv = (LazyVirtual *) arg;
 	return lv->backup;
 }
+
+/* END VIRTUAL TABLE CODE */

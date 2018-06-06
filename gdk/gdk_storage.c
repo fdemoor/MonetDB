@@ -877,6 +877,7 @@ BATdelete(BAT *b)
 		OIDXdestroy(b);
 	}
 
+	/* VIRTUAL TABLE CODE */
 	if (BBP_status(bid) & BBPPYTHONBAT) {
 		b->batCopiedtodisk = FALSE;
 		return;
@@ -885,6 +886,7 @@ BATdelete(BAT *b)
 		b->batCopiedtodisk = FALSE;
 		return;
 	}
+	/* END VIRTUAL TABLE CODE */
 
 	if (b->batCopiedtodisk || (b->theap.storage != STORE_MEM)) {
 		if (b->ttype != TYPE_void &&

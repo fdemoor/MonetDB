@@ -567,12 +567,16 @@ BATfree(BAT *b)
 	IMPSfree(b);
 	OIDXfree(b);
 
+	/* VIRTUAL TABLE CODE */
 	if (BBP_status(b->batCacheid) & BBPPYTHONBAT) {
 		return;
 	}
+	/* END VIRTUAL TABLE CODE */
 
 	if (b->ttype) {
+		/* VIRTUAL TABLE CODE */
 		if ((BBP_status(b->batCacheid) & BBPPYTHONFORMERBAT) == 0) {
+		/* END VIRTUAL TABLE CODE */
 			HEAPfree(&b->theap, 0);
 		}
 	} else

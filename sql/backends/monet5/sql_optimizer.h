@@ -18,7 +18,9 @@ sql5_export str SQLoptimizer(Client c);
 sql5_export void SQLsetAccessMode(Client c);
 sql5_export str getSQLoptimizer(mvc *m);
 
+/* VIRTUAL TABLE CODE */
 /** Checks if this is a lazy column and if so performs the conversion */
 sql5_export int checkLazyConversion(mvc *m, sql_column *c);
+/* END VIRTUAL TABLE CODE */
 
 #endif /* _SQL_OPTIMIZER_H_ */

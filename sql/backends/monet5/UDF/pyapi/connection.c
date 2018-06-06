@@ -110,6 +110,7 @@ Py_END_ALLOW_THREADS;
 	}
 }
 
+/* VIRTUAL TABLE CODE */
 
 /* Lower all the char in name to be consistent with SQL parser */
 #define LOWER_NAME(name)                                                      \
@@ -152,7 +153,7 @@ Py_END_ALLOW_THREADS;
 		}                                                                     \
 	}
 
-//#define VTABLE_DEBUG
+//#define VTABLE_DEBUG // Uncomment to have some time measurements logged
 static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *args, PyObject *kw)
 {
 
@@ -327,10 +328,10 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 	cond = 1;
 	while (cond) {
 
-		if (len == 0) {
+		if (len == 0) { // Get items from the dict
 			cond = PyDict_Next(dict, &pos, &key, &value);
 		} else {
-			if (pos < len) {
+			if (pos < len) { // Get items from the list if not empty
 				key = PyList_GET_ITEM(cols, pos);
 				value = PyDict_GetItem(dict, key);
 				if (!value) {
@@ -383,10 +384,10 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 
 	while (cond) {
 
-		if (len == 0) {
+		if (len == 0) { // Get items from the dict
 			cond = PyDict_Next(dict, &pos, &key, &value);
 		} else {
-			if (pos < len) {
+			if (pos < len) { // Get items from the list if not empty
 				key = PyList_GET_ITEM(cols, pos);
 				value = PyDict_GetItem(dict, key);
 				if (!value) {
@@ -410,7 +411,7 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 		ASSIGN_BAT_TYPE()
 		mem_size = PyArray_DESCR((PyArrayObject *) value)->elsize;
 
-		if (PyType_IsNumpyMaskedArray(value)) {
+		if (PyType_IsNumpyMaskedArray(value)) { // Check if masked array
 			mask = PyObject_GetAttrString(value, "mask");
 			data = PyObject_GetAttrString(value, "data");
 		} else {
@@ -659,11 +660,13 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 cleanandfail0:
 	return NULL;
 }
+/* END VIRTUAL TABLE CODE */
 
 static PyMethodDef _connectionObject_methods[] = {
 	{"execute", (PyCFunction)_connection_execute, METH_O,
 	 "execute(query) -> executes a SQL query on the database in the current "
 	 "client context"},
+	 /* VIRTUAL TABLE CODE */
 	{"registerTable", (PyCFunction)_connection_registerTable, METH_VARARGS|METH_KEYWORDS,
 	 "registerTable(dict, name) -> registers a table existing through Python "
 	 "objects to be able to use it in queries, de-register can be done using "
@@ -674,6 +677,7 @@ static PyMethodDef _connectionObject_methods[] = {
 	 "(i.e. the ones with zero-copy optimization)"},
 	{"persistColumn", (PyCFunction)_connection_persistColumn, METH_VARARGS|METH_KEYWORDS,
 	 "persistColumn(table, name) -> writes a column from a virtual table on disk, "},
+	 /* END VIRTUAL TABLE CODE */
 	{NULL, NULL, 0, NULL} /* Sentinel */
 };
 

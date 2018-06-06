@@ -62,9 +62,11 @@ SQLgetColumnSize(sql_trans *tr, sql_column *c, int access)
 	return size;
 }
 
-//#define VTABLE_DEBUG
+/* VIRTUAL TABLE CODE */
+//#define VTABLE_DEBUG // uncomment to have some time measurements logged
 int checkLazyConversion(mvc *m, sql_column *c) {
 	BAT *b = store_funcs.bind_col(m->session->tr, c, RDONLY);
+	// Check if this is a lazy column
 	if (BBP_status(b->batCacheid) & BBPPYTHONLAZYBAT) {
 
 #ifdef VTABLE_DEBUG
@@ -79,6 +81,7 @@ int checkLazyConversion(mvc *m, sql_column *c) {
 #ifdef VTABLE_DEBUG
 		start = clock();
 #endif
+		// Call the conversion function
 		if (lpb->conv_fcn((void*) m->session->tr, (void*) c, lpb->lv) == false) {
 			free(lpb);
 			GDKerror("lazy python BAT: error during conversion, drop the "
@@ -90,7 +93,7 @@ int checkLazyConversion(mvc *m, sql_column *c) {
 		end = clock();
 
 		cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-		printf("conversion took %g s\n", cpu_time_used);
+		printf("conversion of column %s took %g s\n", c->base.name, cpu_time_used);
 		fflush(stdout);
 #endif
 
@@ -98,6 +101,7 @@ int checkLazyConversion(mvc *m, sql_column *c) {
 	}
 	return 0;
 }
+/* END VIRTUAL TABLE CODE */
 
 /*
  * The maximal space occupied by a query is calculated
@@ -117,7 +121,9 @@ SQLgetSpace(mvc *m, MalBlkPtr mb, int prepare)
 	sql_trans *tr = m->session->tr;
 	lng size,space = 0, i;
 	str lasttable = 0;
+	/* VIRTUAL TABLE CODE */
 	int lazyUpdate = 0;
+	/* END VIRTUAL TABLE CODE */
 
 	for (i = 0; i < mb->stop; i++) {
 		InstrPtr p = mb->stmt[i];
@@ -144,7 +150,9 @@ SQLgetSpace(mvc *m, MalBlkPtr mb, int prepare)
 
 			/* we have to sum the cost of all three components of a BAT */
 			if (c && (!isRemote(c->t) && !isMergeTable(c->t)) && (lasttable == 0 || strcmp(lasttable,tname)==0)) {
+				/* VIRTUAL TABLE CODE */
 				lazyUpdate += checkLazyConversion(m, c);
+				/* END VIRTUAL TABLE CODE */
 				size = SQLgetColumnSize(tr, c, access);
 				space += size;	// accumulate once per table
 				//lasttable = tname;	 invalidate this attempt
@@ -184,15 +192,6 @@ SQLgetSpace(mvc *m, MalBlkPtr mb, int prepare)
 			}
 		}
 	}
-
-//	if (lazyUpdate) {
-//		store_lock();
-//		sql_trans_commit(m->session->tr);
-//		sql_trans_end(m->session);
-//		store_apply_deltas();
-//		sql_trans_begin(m->session);
-//		store_unlock();
-//	}
 
 	return space;
 }

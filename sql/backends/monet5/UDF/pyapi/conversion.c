@@ -1357,37 +1357,71 @@ bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type, int mem_size,
 	BAThrestricted(b) = 0;
 
 	if (!obj) { // Array contains directly strings
-		for (i = 0; i < nrows; i++) {
 
-			if (unicode) {
+		if (IsBlobType(bat_type)) { // ByteArray objects
 
+			blob *ele_blob;
+			size_t blob_fixed_size = -1;
+			blob_fixed_size = mem_size;
+			for (i = 0; i < nrows; i++) {
+				size_t blob_len = 0;
 				if (maskData != NULL && maskData[i] == TRUE) {
-					b->tnil = 1;
-					CONVERT_AND_APPEND_NIL();
+					ele_blob = (blob *)GDKmalloc(offsetof(blob, data));
+					ele_blob->nitems = ~(size_t)0;
 				} else {
-					utf32_to_utf8(0, mem_size / 4, utf8_string,
-						(const Py_UNICODE *) &data[i * mem_size]);
-					CONVERT_AND_APPEND();
-				}
-
-			} else {
-
-				if (maskData != NULL && maskData[i] == TRUE) {
-					b->tnil = 1;
-					CONVERT_AND_APPEND_NIL();
-				} else {
-					if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
-						sprintf(*return_msg, "invalid string encoding used: "
-							"expecting a regular ASCII string, or a Numpy_Unicode object");
-						goto cleanandfail;
+					if (blob_fixed_size > 0) {
+						blob_len = blob_fixed_size;
+					} else {
+						assert(0);
 					}
-					CONVERT_AND_APPEND();
+					ele_blob = GDKmalloc(blobsize(blob_len));
+					ele_blob->nitems = blob_len;
+					memcpy(ele_blob->data, data, blob_len);
+				}
+				if (BUNappend(b, ele_blob, FALSE) != GDK_SUCCEED) {
+					goto cleanandfail;
+				}
+				GDKfree(ele_blob);
+				data += mem_size;
+			}
+
+		} else {
+
+			for (i = 0; i < nrows; i++) {
+
+				if (unicode) {
+
+					if (maskData != NULL && maskData[i] == TRUE) {
+						b->tnil = 1;
+						CONVERT_AND_APPEND_NIL();
+					} else {
+						utf32_to_utf8(0, mem_size / 4, utf8_string,
+							(const Py_UNICODE *) &data[i * mem_size]);
+						CONVERT_AND_APPEND();
+					}
+
+				} else {
+
+					if (maskData != NULL && maskData[i] == TRUE) {
+						b->tnil = 1;
+						CONVERT_AND_APPEND_NIL();
+					} else {
+						if (!string_copy(&data[i * mem_size], utf8_string, mem_size, false)) {
+							sprintf(*return_msg, "invalid string encoding used: "
+								"expecting a regular ASCII string, or a Numpy_Unicode object");
+							goto cleanandfail;
+						}
+						CONVERT_AND_APPEND();
+					}
+
 				}
 
 			}
 
 		}
+
 	} else { // Array contains objects
+
 		size_t utf8_size = utf8string_minlength;
 		for (i = 0; i < nrows; i++) {
 			size_t size = utf8string_minlength;

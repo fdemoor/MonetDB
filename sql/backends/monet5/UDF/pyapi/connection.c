@@ -137,6 +137,8 @@ Py_END_ALLOW_THREADS;
 			ASSIGN_TYPE(daytime)                                              \
 		} else if (strcmp(oname, "timestamp") == 0) {                         \
 			ASSIGN_TYPE(timestamp)                                            \
+		} else if (strcmp(oname, "blob") == 0) {                              \
+			ASSIGN_TYPE(sqlblob)                                              \
 		} else {                                                              \
 			PyErr_Format(PyExc_ValueError,                                    \
 				"unrecognized option for column %s: %s "                      \
@@ -146,10 +148,10 @@ Py_END_ALLOW_THREADS;
 		}                                                                     \
 	} else {                                                                  \
 		int type = PyArray_TYPE((PyArrayObject *) value);                     \
-		if (PyType_IsObject(type)) {                                          \
-			bat_type = TYPE_str;                                              \
-		} else {                                                              \
-			bat_type = PyType_ToBat(type);                                    \
+				if (PyType_IsObject(type)) {                                  \
+					bat_type = TYPE_str;                                      \
+				} else {                                                      \
+					bat_type = PyType_ToBat(type);                            \
 		}                                                                     \
 	}
 
@@ -438,7 +440,8 @@ static PyObject *_connection_registerTable(Py_ConnectionObject *self, PyObject *
 				goto cleanandfail2;
 			}
 
-			if (GDKgetenv_istrue("embeddedpy_lazy_virt")) {
+			if ((GDKgetenv_istrue("embeddedpy_lazy_virt"))
+					&& (bat_type != TYPE_sqlblob)) {
 
 				/* Lazy register: conversion price will be paid later, when needed
 				 * Hook for conversion is in SQLgetSpace function

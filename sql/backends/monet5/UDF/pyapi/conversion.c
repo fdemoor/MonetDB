@@ -804,6 +804,8 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 	size_t index_offset = 0;
 	char *msg;
 	size_t iu;
+	PyObject *pickle_module = NULL, *pickle = NULL;
+	bool gstate = 0;
 
 	if (ret->multidimensional)
 		index_offset = i;
@@ -826,11 +828,16 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 		char *data = NULL;
 		blob *ele_blob;
 		size_t blob_fixed_size = -1;
+		blob_fixed_size = ret->memory_size;
 		if (ret->result_type == NPY_OBJECT) {
-			// FIXME: check for byte array/or pickle object to string
-			msg = createException(MAL, "pyapi.eval",
-								  SQLSTATE(PY000) "Python object to BLOB not supported yet.");
-			goto wrapup;
+			gstate = Python_ObtainGIL();
+			pickle_module = PyImport_ImportModule("pickle");
+			if (pickle_module == NULL) {
+				msg = createException(MAL, "pyapi.eval",
+									  SQLSTATE(PY000) "Can't load pickle module to pickle python object to blob");
+				goto wrapup;
+			}
+			blob_fixed_size = 0;
 		}
 		if (ret->mask_data != NULL) {
 			mask = (bool *)ret->mask_data;
@@ -842,7 +849,6 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 		}
 		data = (char *)ret->array_data;
 		data += (index_offset * ret->count) * ret->memory_size;
-		blob_fixed_size = ret->memory_size;
 		b = COLnew(seqbase, TYPE_sqlblob, (BUN)ret->count, TRANSIENT);
 		b->tnil = 0;
 		b->tnonil = 1;
@@ -850,6 +856,34 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 		b->tsorted = 0;
 		b->trevsorted = 0;
 		for (iu = 0; iu < ret->count; iu++) {
+
+			PyObject *pickle_cnt = NULL;
+			char* memcpy_data;
+			if (ret->result_type == NPY_OBJECT) {
+				PyObject *object;
+				object = *((PyObject **)&data[0]);
+				if (PyByteArray_Check(object)) {
+					pickle_cnt = object;
+					memcpy_data = PyByteArray_AsString(object);
+				} else {
+					pickle = PyObject_CallMethod(pickle_module, "dumps", "O", object);
+					if (pickle == NULL) {
+						msg = createException(MAL, "pyapi.eval",
+											  SQLSTATE(PY000) "Can't pickle object to blob");
+						goto wrapup;
+					}
+					pickle_cnt = pickle;
+					memcpy_data = PyBytes_AsString(pickle);
+				}
+				if (memcpy_data == NULL) {
+					msg = createException(MAL, "pyapi.eval",
+										  SQLSTATE(PY000) "Can't get blob pickled object as char*");
+					goto wrapup;
+				}
+			} else {
+				memcpy_data = data;
+			}
+
 			size_t blob_len = 0;
 			if (mask && mask[iu]) {
 				ele_blob = (blob *)GDKmalloc(offsetof(blob, data));
@@ -858,17 +892,25 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 				if (blob_fixed_size > 0) {
 					blob_len = blob_fixed_size;
 				} else {
-					assert(0);
+					blob_len = pyobject_get_size(pickle_cnt);
 				}
 				ele_blob = GDKmalloc(blobsize(blob_len));
 				ele_blob->nitems = blob_len;
-				memcpy(ele_blob->data, data, blob_len);
+				memcpy(ele_blob->data, memcpy_data, blob_len);
 			}
 			if (BUNappend(b, ele_blob, FALSE) != GDK_SUCCEED) {
 				goto bunins_failed;
 			}
 			GDKfree(ele_blob);
 			data += ret->memory_size;
+
+			if (ret->result_type == NPY_OBJECT) {
+				Py_XDECREF(pickle);
+			}
+		}
+		if (ret->result_type == NPY_OBJECT) {
+			Py_XDECREF(pickle_module);
+			Python_ReleaseGIL(gstate);
 		}
 		BATsetcount(b, (BUN)ret->count);
 		BATsettrivprop(b);
@@ -958,6 +1000,11 @@ bunins_failed:
 	BBPunfix(b->batCacheid);
 	msg = createException(MAL, "pyapi.eval", SQLSTATE(HY001) MAL_MALLOC_FAIL);
 wrapup:
+	if (ret->result_type == NPY_OBJECT) {
+		Py_XDECREF(pickle_module);
+		Py_XDECREF(pickle);
+		Python_ReleaseGIL(gstate);
+	}
 	*return_message = msg;
 	return NULL;
 }

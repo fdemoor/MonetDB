@@ -804,8 +804,6 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 	size_t index_offset = 0;
 	char *msg;
 	size_t iu;
-	PyObject *pickle_module = NULL, *pickle = NULL;
-	bool gstate = 0;
 
 	if (ret->multidimensional)
 		index_offset = i;
@@ -827,24 +825,35 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 		bool *mask = NULL;
 		char *data = NULL;
 		blob *ele_blob;
-		size_t blob_fixed_size = -1;
-		blob_fixed_size = ret->memory_size;
+		size_t blob_fixed_size = ret->memory_size;
+
+		PyObject *pickle_module = NULL, *pickle = NULL;
+		bool gstate = 0;
+
 		if (ret->result_type == NPY_OBJECT) {
+			// Python objects, we may need to pickle them, so we
+			// may execute Python code, we have to obtain the GIL
 			gstate = Python_ObtainGIL();
 			pickle_module = PyImport_ImportModule("pickle");
 			if (pickle_module == NULL) {
 				msg = createException(MAL, "pyapi.eval",
 									  SQLSTATE(PY000) "Can't load pickle module to pickle python object to blob");
+				Python_ReleaseGIL(gstate);
 				goto wrapup;
 			}
-			blob_fixed_size = 0;
+			blob_fixed_size = 0; // Size depends on the objects
 		}
+
 		if (ret->mask_data != NULL) {
 			mask = (bool *)ret->mask_data;
 		}
 		if (ret->array_data == NULL) {
 			msg = createException(MAL, "pyapi.eval",
 								  SQLSTATE(PY000) "No return value stored in the structure.");
+			if (ret->result_type == NPY_OBJECT) {
+				Py_XDECREF(pickle_module);
+				Python_ReleaseGIL(gstate);
+			}
 			goto wrapup;
 		}
 		data = (char *)ret->array_data;
@@ -857,61 +866,67 @@ BAT *PyObject_ConvertToBAT(PyReturn *ret, sql_subtype *type, int bat_type,
 		b->trevsorted = 0;
 		for (iu = 0; iu < ret->count; iu++) {
 
-			PyObject *pickle_cnt = NULL;
 			char* memcpy_data;
+			size_t blob_len = 0;
+
 			if (ret->result_type == NPY_OBJECT) {
-				PyObject *object;
-				object = *((PyObject **)&data[0]);
+				PyObject *object = *((PyObject **)&data[0]);
 				if (PyByteArray_Check(object)) {
-					pickle_cnt = object;
 					memcpy_data = PyByteArray_AsString(object);
+					blob_len = pyobject_get_size(object);
 				} else {
 					pickle = PyObject_CallMethod(pickle_module, "dumps", "O", object);
 					if (pickle == NULL) {
 						msg = createException(MAL, "pyapi.eval",
 											  SQLSTATE(PY000) "Can't pickle object to blob");
+						Py_XDECREF(pickle_module);
+						Python_ReleaseGIL(gstate);
 						goto wrapup;
 					}
-					pickle_cnt = pickle;
 					memcpy_data = PyBytes_AsString(pickle);
+					blob_len = pyobject_get_size(pickle);
+					Py_XDECREF(pickle);
 				}
 				if (memcpy_data == NULL) {
 					msg = createException(MAL, "pyapi.eval",
 										  SQLSTATE(PY000) "Can't get blob pickled object as char*");
+					Py_XDECREF(pickle_module);
+					Python_ReleaseGIL(gstate);
 					goto wrapup;
 				}
 			} else {
 				memcpy_data = data;
 			}
 
-			size_t blob_len = 0;
 			if (mask && mask[iu]) {
 				ele_blob = (blob *)GDKmalloc(offsetof(blob, data));
 				ele_blob->nitems = ~(size_t)0;
 			} else {
 				if (blob_fixed_size > 0) {
 					blob_len = blob_fixed_size;
-				} else {
-					blob_len = pyobject_get_size(pickle_cnt);
 				}
 				ele_blob = GDKmalloc(blobsize(blob_len));
 				ele_blob->nitems = blob_len;
 				memcpy(ele_blob->data, memcpy_data, blob_len);
 			}
 			if (BUNappend(b, ele_blob, FALSE) != GDK_SUCCEED) {
+				if (ret->result_type == NPY_OBJECT) {
+					Py_XDECREF(pickle_module);
+					Python_ReleaseGIL(gstate);
+				}
 				goto bunins_failed;
 			}
 			GDKfree(ele_blob);
 			data += ret->memory_size;
 
-			if (ret->result_type == NPY_OBJECT) {
-				Py_XDECREF(pickle);
-			}
 		}
+
+		// We are done, we can release the GIL
 		if (ret->result_type == NPY_OBJECT) {
 			Py_XDECREF(pickle_module);
 			Python_ReleaseGIL(gstate);
 		}
+
 		BATsetcount(b, (BUN)ret->count);
 		BATsettrivprop(b);
 	} else {
@@ -1000,11 +1015,6 @@ bunins_failed:
 	BBPunfix(b->batCacheid);
 	msg = createException(MAL, "pyapi.eval", SQLSTATE(HY001) MAL_MALLOC_FAIL);
 wrapup:
-	if (ret->result_type == NPY_OBJECT) {
-		Py_XDECREF(pickle_module);
-		Py_XDECREF(pickle);
-		Python_ReleaseGIL(gstate);
-	}
 	*return_message = msg;
 	return NULL;
 }
@@ -1405,7 +1415,7 @@ bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type, int mem_size,
 
 	if (!obj) { // Array contains directly strings
 
-		if (IsBlobType(bat_type)) { // ByteArray objects
+		if (IsBlobType(bat_type)) { // blob
 
 			blob *ele_blob;
 			size_t blob_fixed_size = -1;
@@ -1432,7 +1442,7 @@ bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type, int mem_size,
 				data += mem_size;
 			}
 
-		} else {
+		} else { // strings
 
 			for (i = 0; i < nrows; i++) {
 
@@ -1469,37 +1479,102 @@ bool PyObject_FillBATFromArray(PyArrayObject *array, int bat_type, int mem_size,
 
 	} else { // Array contains objects
 
-		size_t utf8_size = utf8string_minlength;
-		for (i = 0; i < nrows; i++) {
-			size_t size = utf8string_minlength;
-			PyObject *object;
-			if (maskData != NULL && maskData[i] == TRUE) {
-				continue;
+		if (IsBlobType(bat_type)) { // blob
+
+			blob *ele_blob;
+			PyObject *pickle_module = NULL, *pickle = NULL;
+			bool gstate = 0;
+
+			gstate = Python_ObtainGIL();
+			pickle_module = PyImport_ImportModule("pickle");
+			if (pickle_module == NULL) {
+				sprintf(*return_msg, "Can't load pickle module to pickle python object to blob");
+				Python_ReleaseGIL(gstate);
+				goto cleanandfail;
 			}
-			object = *((PyObject **)&data[i * mem_size]);
-			size = pyobject_get_size(object);
-			if (size > utf8_size) { utf8_size = size; }
-		}
-		utf8_string = GDKzalloc(utf8_size);
-		if (utf8_string == NULL) {
-			sprintf(*return_msg, "could not allocate utf8 string");
-			goto cleanandfail;
-		}
-		for (i = 0; i < nrows; i++) {
-			if (maskData != NULL && maskData[i] == TRUE) {
-				b->tnil = 1;
-				CONVERT_AND_APPEND_NIL();
-			} else {
-				/* we try to handle as many types as possible */
-				pyobject_to_str(
-					((PyObject **)&data[i * mem_size]),
-					utf8_size, &utf8_string);
-				CONVERT_AND_APPEND();
+
+			for (i = 0; i < nrows; i++) {
+
+				size_t blob_len = 0;
+				char* memcpy_data;
+				PyObject *object = *((PyObject **)&data[0]);
+				if (PyByteArray_Check(object)) {
+					memcpy_data = PyByteArray_AsString(object);
+					blob_len = pyobject_get_size(object);
+				} else {
+					pickle = PyObject_CallMethod(pickle_module, "dumps", "O", object);
+					if (pickle == NULL) {
+						sprintf(*return_msg, "Can't pickle object to blob");
+						Py_XDECREF(pickle_module);
+						Python_ReleaseGIL(gstate);
+						goto cleanandfail;
+					}
+					memcpy_data = PyBytes_AsString(pickle);
+					blob_len = pyobject_get_size(pickle);
+					Py_XDECREF(pickle);
+				}
+				if (memcpy_data == NULL) {
+					sprintf(*return_msg, "Can't get blob pickled object as char*");
+					Py_XDECREF(pickle_module);
+					Python_ReleaseGIL(gstate);
+					goto cleanandfail;
+				}
+
+
+				if (maskData != NULL && maskData[i] == TRUE) {
+					ele_blob = (blob *)GDKmalloc(offsetof(blob, data));
+					ele_blob->nitems = ~(size_t)0;
+				} else {
+					ele_blob = GDKmalloc(blobsize(blob_len));
+					ele_blob->nitems = blob_len;
+					memcpy(ele_blob->data, memcpy_data, blob_len);
+				}
+				if (BUNappend(b, ele_blob, FALSE) != GDK_SUCCEED) {
+					Py_XDECREF(pickle_module);
+					Python_ReleaseGIL(gstate);
+					goto cleanandfail;
+				}
+				GDKfree(ele_blob);
+				data += mem_size;
+
 			}
+			Py_XDECREF(pickle_module);
+			Python_ReleaseGIL(gstate);
+
+		} else { // strings
+
+			size_t utf8_size = utf8string_minlength;
+			for (i = 0; i < nrows; i++) {
+				size_t size = utf8string_minlength;
+				PyObject *object;
+				if (maskData != NULL && maskData[i] == TRUE) {
+					continue;
+				}
+				object = *((PyObject **)&data[i * mem_size]);
+				size = pyobject_get_size(object);
+				if (size > utf8_size) { utf8_size = size; }
+			}
+			utf8_string = GDKzalloc(utf8_size);
+			if (utf8_string == NULL) {
+				sprintf(*return_msg, "could not allocate utf8 string");
+				goto cleanandfail;
+			}
+			for (i = 0; i < nrows; i++) {
+				if (maskData != NULL && maskData[i] == TRUE) {
+					b->tnil = 1;
+					CONVERT_AND_APPEND_NIL();
+				} else {
+					/* we try to handle as many types as possible */
+					pyobject_to_str(
+						((PyObject **)&data[i * mem_size]),
+						utf8_size, &utf8_string);
+					CONVERT_AND_APPEND();
+				}
+			}
+
 		}
 
 	}
-
 
 	if (utf8_string) {
 		GDKfree(utf8_string);

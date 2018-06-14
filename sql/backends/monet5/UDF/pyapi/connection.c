@@ -604,13 +604,6 @@ static PyObject *_connection_persistTable(Py_ConnectionObject *self, PyObject *a
 		PERSIST_COLUMN();
 	}
 
-	store_lock();
-	sql_trans_commit(sql->session->tr);
-	sql_trans_end(sql->session);
-	store_apply_deltas();
-	sql_trans_begin(sql->session);
-	store_unlock();
-
 	return Py_BuildValue("");
 
 cleanandfail0:
@@ -650,13 +643,6 @@ static PyObject *_connection_persistColumn(Py_ConnectionObject *self, PyObject *
 		goto cleanandfail0;
 	}
 	PERSIST_COLUMN();
-
-	store_lock();
-	sql_trans_commit(sql->session->tr);
-	sql_trans_end(sql->session);
-	store_apply_deltas();
-	sql_trans_begin(sql->session);
-	store_unlock();
 
 	return Py_BuildValue("");
 

@@ -1590,13 +1590,15 @@ cleanandfail:
 
 
 #define UPDATE_FROM_VALUE(x)                                                  \
-	if (BUNinplace(b, i, &(x), TRUE) != GDK_SUCCEED) {                           \
+	table_funcs.column_update_value(tr, c, i, (void*) &(x));                  \
+	if (BUNinplace(b, i, &(x), TRUE) != GDK_SUCCEED) {                        \
 		sprintf(return_msg, "BUNinplace failed");                             \
 		goto cleanandfail;                                                    \
 	}
 
 #define UPDATE_FROM_POINTER(x)                                                \
-	if (BUNinplace(b, i, (x), TRUE) != GDK_SUCCEED) {                            \
+	table_funcs.column_update_value(tr, c, i, (void*) (x));                   \
+	if (BUNinplace(b, i, (x), TRUE) != GDK_SUCCEED) {                         \
 		sprintf(return_msg, "BUNinplace failed");                             \
 		goto cleanandfail;                                                    \
 	}
